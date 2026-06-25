@@ -6,5 +6,6 @@ data class Transaction(
     val id: String = UUID.randomUUID().toString(),
     val amount: Double,
     val date: Long,
-    val description: String
+    val description: String,
+    val category: String = ""
 )
