@@ -10,6 +10,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.example.startapp.data.model.DailySnapshot
 import com.example.startapp.data.model.Transaction
+import com.example.startapp.domain.model.ExpenseCategory
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.flow.Flow
@@ -17,6 +18,46 @@ import kotlinx.coroutines.flow.map
 
 // Extension property to delegate DataStore creation to the context
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
+
+private val collapsedLegacyCategories = mapOf(
+    "Home" to ExpenseCategory.SHOPPING.label,
+    "Work" to ExpenseCategory.DIGITAL.label,
+    "Subscriptions" to ExpenseCategory.DIGITAL.label,
+    "Bills" to ExpenseCategory.DIGITAL.label
+)
+
+internal fun normalizeTransactionCategory(amount: Double, description: String, category: String?): String {
+    val collapsed = category?.let { collapsedLegacyCategories[it] }
+    if (collapsed != null) {
+        return if (amount >= 0) {
+            ExpenseCategory.INCOME.label
+        } else {
+            ExpenseCategory.inferFromDescription(description).takeIf { it != ExpenseCategory.OTHER.label } ?: collapsed
+        }
+    }
+
+    val shouldReclassifyOther = category == ExpenseCategory.OTHER.label && amount < 0
+    if (!category.isNullOrBlank() && !shouldReclassifyOther) {
+        return category
+    }
+    return if (amount >= 0) {
+        ExpenseCategory.INCOME.label
+    } else {
+        ExpenseCategory.inferFromDescription(description)
+    }
+}
+
+private fun List<Transaction>.normalizedTransactions(): List<Transaction> {
+    return map { transaction ->
+        transaction.copy(
+            category = normalizeTransactionCategory(
+                amount = transaction.amount,
+                description = transaction.description,
+                category = transaction.category
+            )
+        )
+    }
+}
 
 class CounterDataRepository(private val context: Context) {
 
@@ -47,7 +88,8 @@ class CounterDataRepository(private val context: Context) {
         .map { preferences ->
             val json = preferences[transactionsKey] ?: "[]"
             val type = object : TypeToken<List<Transaction>>() {}.type
-            gson.fromJson(json, type)
+            val current: List<Transaction> = gson.fromJson(json, type) ?: emptyList()
+            current.normalizedTransactions()
         }
 
     // Flow to emit the list of daily snapshots
@@ -88,7 +130,7 @@ class CounterDataRepository(private val context: Context) {
         context.dataStore.edit { preferences ->
             val json = preferences[transactionsKey] ?: "[]"
             val type = object : TypeToken<MutableList<Transaction>>() {}.type
-            val currentList: MutableList<Transaction> = gson.fromJson(json, type)
+            val currentList: MutableList<Transaction> = gson.fromJson(json, type) ?: mutableListOf()
             val maxDays = preferences[maxHistoryDaysKey] ?: 900
 
             currentList.add(transaction)
@@ -105,7 +147,7 @@ class CounterDataRepository(private val context: Context) {
         context.dataStore.edit { preferences ->
             val json = preferences[dailySnapshotsKey] ?: "[]"
             val type = object : TypeToken<MutableList<DailySnapshot>>() {}.type
-            val currentList: MutableList<DailySnapshot> = gson.fromJson(json, type)
+            val currentList: MutableList<DailySnapshot> = gson.fromJson(json, type) ?: mutableListOf()
             val maxDays = preferences[maxHistoryDaysKey] ?: 900
 
             currentList.add(snapshot)
@@ -122,7 +164,7 @@ class CounterDataRepository(private val context: Context) {
         context.dataStore.edit { preferences ->
             val json = preferences[transactionsKey] ?: "[]"
             val type = object : TypeToken<MutableList<Transaction>>() {}.type
-            val currentList: MutableList<Transaction> = gson.fromJson(json, type)
+            val currentList: MutableList<Transaction> = gson.fromJson(json, type) ?: mutableListOf()
 
             val transactionToRemove = currentList.find { it.id == transactionId }
             if (transactionToRemove != null) {
@@ -140,6 +182,18 @@ class CounterDataRepository(private val context: Context) {
         context.dataStore.edit { preferences ->
             preferences[transactionsKey] = "[]"
             preferences[dailySnapshotsKey] = "[]"
+        }
+    }
+
+    suspend fun normalizeStoredTransactions() {
+        context.dataStore.edit { preferences ->
+            val json = preferences[transactionsKey] ?: "[]"
+            val type = object : TypeToken<List<Transaction>>() {}.type
+            val current: List<Transaction> = gson.fromJson(json, type) ?: emptyList()
+            val normalized = current.normalizedTransactions()
+            if (normalized != current) {
+                preferences[transactionsKey] = gson.toJson(normalized)
+            }
         }
     }
 

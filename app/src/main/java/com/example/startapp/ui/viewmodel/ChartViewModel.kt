@@ -19,6 +19,43 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+internal data class OverallTotals(
+    val totalExpenses: Double,
+    val totalIncome: Double,
+    val expenseRatio: Double
+)
+
+internal fun calculateExpenseRatio(totalExpenses: Double, totalIncome: Double): Double {
+    return if (totalIncome > 0.0) totalExpenses / totalIncome else 0.0
+}
+
+internal fun calculateSavingsRatio(expenseRatio: Double): Double {
+    return 1 - expenseRatio
+}
+
+internal fun calculateOverallTotals(
+    snapshots: List<DailySnapshot>,
+    transactions: List<Transaction>
+): OverallTotals {
+    val sortedSnapshots = snapshots.sortedBy { it.date }
+    val totalExpenses = transactions
+        .filter { it.amount < 0 }
+        .sumOf { -it.amount }
+
+    val totalIncome = if (sortedSnapshots.size >= 2) {
+        val delta = sortedSnapshots.last().amount - sortedSnapshots.first().amount
+        delta + totalExpenses
+    } else {
+        totalExpenses
+    }
+
+    return OverallTotals(
+        totalExpenses = totalExpenses,
+        totalIncome = totalIncome,
+        expenseRatio = calculateExpenseRatio(totalExpenses, totalIncome)
+    )
+}
+
 class ChartViewModel(private val repository: CounterDataRepository) : ViewModel() {
 
     private val _timeFrame = MutableStateFlow(TimeFrame.Day)
@@ -63,9 +100,19 @@ class ChartViewModel(private val repository: CounterDataRepository) : ViewModel(
         // Here we are calculating for display.
         val daysAgo = System.currentTimeMillis() - (daysToDisplay.toLong() * 24 * 60 * 60 * 1000)
         val relevantSnapshots = snapshots.filter { it.date >= daysAgo }.sortedBy { it.date }
+        val relevantTransactions = transactions.filter { it.date >= daysAgo }
 
         if (relevantSnapshots.isEmpty()) {
-            return ChartStats(emptyList(), 0.0, 0.0, 0.0, 0.0)
+            return ChartStats(
+                points = emptyList(),
+                totalExpenses = 0.0,
+                totalIncome = 0.0,
+                avgSurplus = 0.0,
+                surplusStdDev = 0.0,
+                expenseRatio = 0.0,
+                savingsRatio = 0.0,
+                categoryExpenses = emptyList()
+            )
         }
 
         // 2. Aggregate Snapshots based on TimeFrame
@@ -91,7 +138,7 @@ class ChartViewModel(private val repository: CounterDataRepository) : ViewModel(
                 val curr = aggregatedSnapshots[i]
 
                 // Transactions between prev and curr
-                val periodTxns = transactions.filter { it.date > prev.date && it.date <= curr.date }
+                val periodTxns = relevantTransactions.filter { it.date > prev.date && it.date <= curr.date }
                 val exp = periodTxns.filter { it.amount < 0 }.sumOf { -it.amount }
                 
                 // Income = Delta Surplus + Expenses
@@ -109,12 +156,40 @@ class ChartViewModel(private val repository: CounterDataRepository) : ViewModel(
             points.add(ChartPoint(aggregatedSnapshots[0].date, aggregatedSnapshots[0].amount, 0.0, 0.0))
         }
 
+        val overallTotals = calculateOverallTotals(
+            snapshots = relevantSnapshots,
+            transactions = relevantTransactions
+        )
+
+        val expenseTransactions = relevantTransactions.filter { it.amount < 0 }
+        val categoryTotals = expenseTransactions
+            .groupBy { transaction ->
+                transaction.category.ifBlank { "Other" }
+            }
+            .map { (category, items) ->
+                category to items.sumOf { -it.amount }
+            }
+            .sortedByDescending { it.second }
+
+        val expenseRatio = overallTotals.expenseRatio
+        val savingsRatio = if (overallTotals.totalIncome > 0.0) calculateSavingsRatio(expenseRatio) else 0.0
+        val categoryExpenses = categoryTotals.map { (category, total) ->
+            com.example.startapp.domain.model.CategoryExpenseSlice(
+                category = category,
+                total = total,
+                percentage = if (overallTotals.totalExpenses > 0.0) total / overallTotals.totalExpenses else 0.0
+            )
+        }
+
         return ChartStats(
             points = points,
-            totalExpenses = totalExp,
-            totalIncome = totalInc,
+            totalExpenses = overallTotals.totalExpenses,
+            totalIncome = overallTotals.totalIncome,
             avgSurplus = if (surplusValues.isNotEmpty()) surplusValues.average() else 0.0,
-            surplusStdDev = calculateStdDev(surplusValues)
+            surplusStdDev = calculateStdDev(surplusValues),
+            expenseRatio = expenseRatio,
+            savingsRatio = savingsRatio,
+            categoryExpenses = categoryExpenses
         )
     }
 

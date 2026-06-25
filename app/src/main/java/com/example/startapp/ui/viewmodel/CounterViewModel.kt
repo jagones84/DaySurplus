@@ -7,6 +7,9 @@ import androidx.lifecycle.viewModelScope
 import com.example.startapp.data.CounterDataRepository
 import com.example.startapp.data.model.DailySnapshot
 import com.example.startapp.data.model.Transaction
+import com.example.startapp.domain.model.ExpenseCategory
+import com.example.startapp.domain.model.GroupedTransactionState
+import com.example.startapp.domain.model.buildGroupedTransactionState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
@@ -22,6 +25,9 @@ class CounterViewModel(private val repository: CounterDataRepository) : ViewMode
 
     private val _transactions = MutableStateFlow<List<Transaction>>(emptyList())
     val transactions = _transactions.asStateFlow()
+
+    private val _groupedTransactions = MutableStateFlow(GroupedTransactionState(emptyList(), emptyList()))
+    val groupedTransactions = _groupedTransactions.asStateFlow()
 
     private val _dailySnapshots = MutableStateFlow<List<DailySnapshot>>(emptyList())
     val dailySnapshots = _dailySnapshots.asStateFlow()
@@ -39,8 +45,10 @@ class CounterViewModel(private val repository: CounterDataRepository) : ViewMode
         }
 
         viewModelScope.launch {
+            repository.normalizeStoredTransactions()
             repository.transactions.collect {
                 _transactions.value = it
+                _groupedTransactions.value = buildGroupedTransactionState(it)
             }
         }
 
@@ -61,7 +69,7 @@ class CounterViewModel(private val repository: CounterDataRepository) : ViewMode
         }
     }
 
-    fun addAmount(amount: Double, description: String) {
+    fun addAmount(amount: Double, description: String, category: String = ExpenseCategory.INCOME.label) {
         viewModelScope.launch {
             val currentTotal = _totalAmount.value
             repository.updateTotalAmount(currentTotal + amount)
@@ -69,13 +77,14 @@ class CounterViewModel(private val repository: CounterDataRepository) : ViewMode
                 Transaction(
                     amount = amount,
                     date = System.currentTimeMillis(),
-                    description = description
+                    description = description,
+                    category = category
                 )
             )
         }
     }
 
-    fun subtractAmount(amount: Double, description: String) {
+    fun subtractAmount(amount: Double, description: String, category: String) {
         viewModelScope.launch {
             val currentTotal = _totalAmount.value
             repository.updateTotalAmount(currentTotal - amount)
@@ -83,7 +92,8 @@ class CounterViewModel(private val repository: CounterDataRepository) : ViewMode
                 Transaction(
                     amount = -amount,
                     date = System.currentTimeMillis(),
-                    description = description
+                    description = description,
+                    category = category
                 )
             )
         }

@@ -1,6 +1,8 @@
 package com.example.startapp.ui.screen
 
+import android.content.Context
 import android.graphics.Color
+import android.widget.TextView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -24,14 +26,23 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.example.startapp.R
 import com.example.startapp.domain.model.TimeFrame
 import com.example.startapp.ui.viewmodel.ChartViewModel
 import com.github.mikephil.charting.charts.LineChart
+import com.github.mikephil.charting.charts.PieChart
+import com.github.mikephil.charting.components.MarkerView
 import com.github.mikephil.charting.components.YAxis
 import com.github.mikephil.charting.data.Entry
 import com.github.mikephil.charting.data.LineData
 import com.github.mikephil.charting.data.LineDataSet
+import com.github.mikephil.charting.data.PieData
+import com.github.mikephil.charting.data.PieDataSet
+import com.github.mikephil.charting.data.PieEntry
 import com.github.mikephil.charting.formatter.ValueFormatter
+import com.github.mikephil.charting.highlight.Highlight
+import com.github.mikephil.charting.utils.ColorTemplate
+import com.github.mikephil.charting.utils.MPPointF
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -72,12 +83,16 @@ fun ChartScreen(viewModel: ChartViewModel) {
         }
 
         val stats = chartStats
-        
+
         if (stats != null) {
-            val ratio = if (stats.totalIncome != 0.0) (1 - (stats.totalExpenses / stats.totalIncome)) else 0.0
+            val topCategory = stats.categoryExpenses.firstOrNull()
 
             Text(
-                text = "Avg Saving Surplus Ratio: %.2f%%".format(ratio * 100),
+                text = "Expense Ratio (Expenses/Gains): %.2f%%".format(stats.expenseRatio * 100),
+                modifier = Modifier.padding(vertical = 4.dp)
+            )
+            Text(
+                text = "Saving Ratio (Saved/Gains): %.2f%%".format(stats.savingsRatio * 100),
                 modifier = Modifier.padding(vertical = 4.dp)
             )
             Text(
@@ -96,6 +111,16 @@ fun ChartScreen(viewModel: ChartViewModel) {
                 text = "Surplus Std Dev: %.2f".format(stats.surplusStdDev),
                 modifier = Modifier.padding(vertical = 8.dp)
             )
+            if (topCategory != null) {
+                Text(
+                    text = "Top Expense Category: ${topCategory.category} (%.2f%%)".format(topCategory.percentage * 100),
+                    modifier = Modifier.padding(vertical = 4.dp)
+                )
+                Text(
+                    text = "Active Expense Categories: ${stats.categoryExpenses.size}",
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
+            }
 
             AndroidView(
                 factory = { context ->
@@ -126,6 +151,9 @@ fun ChartScreen(viewModel: ChartViewModel) {
 
                         // Legend styling
                         legend.textColor = Color.YELLOW
+                        marker = DaySurpMarkerView(context)
+                        isHighlightPerTapEnabled = true
+                        isHighlightPerDragEnabled = true
                     }
                 },
                 update = { chart ->
@@ -156,6 +184,7 @@ fun ChartScreen(viewModel: ChartViewModel) {
                             lineWidth = 2f
                             axisDependency = YAxis.AxisDependency.LEFT
                             setDrawValues(false)
+                            setDrawCircles(true)
                         }
 
                         val expenseSet = LineDataSet(expenseEntries, "Expenses").apply {
@@ -165,6 +194,7 @@ fun ChartScreen(viewModel: ChartViewModel) {
                             lineWidth = 2f
                             axisDependency = YAxis.AxisDependency.RIGHT
                             setDrawValues(false)
+                            setDrawCircles(true)
                         }
 
                         val incomeSet = LineDataSet(incomeEntries, "Income").apply {
@@ -174,6 +204,7 @@ fun ChartScreen(viewModel: ChartViewModel) {
                             lineWidth = 2f
                             axisDependency = YAxis.AxisDependency.RIGHT
                             setDrawValues(false)
+                            setDrawCircles(true)
                         }
 
                         chart.data = LineData(surplusSet, expenseSet, incomeSet)
@@ -187,7 +218,76 @@ fun ChartScreen(viewModel: ChartViewModel) {
                     .fillMaxWidth()
                     .height(300.dp)
             )
+
+            Text(
+                text = "Expense Categories",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(top = 20.dp, bottom = 8.dp)
+            )
+
+            if (stats.categoryExpenses.isNotEmpty()) {
+                AndroidView(
+                    factory = { context ->
+                        PieChart(context).apply {
+                            setNoDataText("No expense categories available")
+                            description.isEnabled = false
+                            legend.isEnabled = false
+                            setEntryLabelColor(Color.WHITE)
+                            setUsePercentValues(true)
+                            isDrawHoleEnabled = true
+                            setHoleColor(Color.TRANSPARENT)
+                            centerText = "Expenses"
+                            setCenterTextColor(Color.WHITE)
+                        }
+                    },
+                    update = { pieChart ->
+                        val entries = stats.categoryExpenses.map {
+                            PieEntry(it.total.toFloat(), it.category)
+                        }
+                        val dataSet = PieDataSet(entries, "Expense Categories").apply {
+                            colors = ColorTemplate.MATERIAL_COLORS.toList() + ColorTemplate.COLORFUL_COLORS.toList()
+                            valueTextColor = Color.WHITE
+                            valueTextSize = 12f
+                            sliceSpace = 2f
+                        }
+                        pieChart.data = PieData(dataSet)
+                        pieChart.invalidate()
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(320.dp)
+                )
+
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    stats.categoryExpenses.forEach { slice ->
+                        Text(
+                            text = "${slice.category}: %.2f € (%.2f%%)".format(slice.total, slice.percentage * 100),
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(vertical = 2.dp)
+                        )
+                    }
+                }
+            } else {
+                Text(
+                    text = "No expense data available for the selected period.",
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
+            }
         }
+    }
+}
+
+private class DaySurpMarkerView(context: Context) : MarkerView(context, R.layout.chart_marker) {
+    private val format = SimpleDateFormat("dd/MM", Locale.getDefault())
+
+    override fun refreshContent(entry: Entry?, highlight: Highlight?) {
+        findViewById<TextView>(R.id.markerText)?.text =
+            "${format.format(Date(entry?.x?.toLong() ?: 0L))} - ${"%.2f".format(entry?.y ?: 0f)} €"
+        super.refreshContent(entry, highlight)
+    }
+
+    override fun getOffset(): MPPointF {
+        return MPPointF((-width / 2).toFloat(), (-height).toFloat())
     }
 }
 
