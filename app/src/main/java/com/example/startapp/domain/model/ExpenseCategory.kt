@@ -167,6 +167,10 @@ enum class ExpenseCategory(
             OTHER
         )
 
+        fun builtInExpenseLabels(): List<String> {
+            return CategoryCatalog.builtInCategories(CategoryType.EXPENSE)
+        }
+
         fun inferFromDescription(description: String): String {
             val normalized = normalizeDescription(description)
             prioritizedRules.firstOrNull { rule ->
