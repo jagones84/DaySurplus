@@ -1,0 +1,132 @@
+package com.example.startapp.ui.viewmodel
+
+import android.app.Application
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import com.example.startapp.data.CounterDataRepository
+import com.example.startapp.data.model.DailySnapshot
+import com.example.startapp.data.model.Transaction
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+
+class CounterViewModel(private val repository: CounterDataRepository) : ViewModel() {
+
+    private val _totalAmount = MutableStateFlow(0.0)
+    val totalAmount = _totalAmount.asStateFlow()
+
+    private val _dailyIncrease = MutableStateFlow(0.0)
+    val dailyIncrease = _dailyIncrease.asStateFlow()
+
+    private val _transactions = MutableStateFlow<List<Transaction>>(emptyList())
+    val transactions = _transactions.asStateFlow()
+
+    private val _dailySnapshots = MutableStateFlow<List<DailySnapshot>>(emptyList())
+    val dailySnapshots = _dailySnapshots.asStateFlow()
+
+    private val _daysToDisplay = MutableStateFlow(30) // Default value, will be updated from repository
+    val daysToDisplay = _daysToDisplay.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            repository.totalAmount.collect { _totalAmount.value = it }
+        }
+
+        viewModelScope.launch {
+            repository.dailyIncrease.collect { _dailyIncrease.value = it }
+        }
+
+        viewModelScope.launch {
+            repository.transactions.collect {
+                _transactions.value = it
+            }
+        }
+
+        viewModelScope.launch {
+            repository.dailySnapshots.collect {
+                _dailySnapshots.value = it
+            }
+        }
+
+        viewModelScope.launch {
+            repository.daysToDisplay.collect { _daysToDisplay.value = it }
+        }
+    }
+
+    fun updateDaysToDisplay(days: Int) {
+        viewModelScope.launch {
+            repository.updateDaysToDisplay(days)
+        }
+    }
+
+    fun addAmount(amount: Double, description: String) {
+        viewModelScope.launch {
+            val currentTotal = _totalAmount.value
+            repository.updateTotalAmount(currentTotal + amount)
+            repository.addTransaction(
+                Transaction(
+                    amount = amount,
+                    date = System.currentTimeMillis(),
+                    description = description
+                )
+            )
+        }
+    }
+
+    fun subtractAmount(amount: Double, description: String) {
+        viewModelScope.launch {
+            val currentTotal = _totalAmount.value
+            repository.updateTotalAmount(currentTotal - amount)
+            repository.addTransaction(
+                Transaction(
+                    amount = -amount,
+                    date = System.currentTimeMillis(),
+                    description = description
+                )
+            )
+        }
+    }
+
+    fun deleteTransaction(transaction: Transaction) {
+        viewModelScope.launch {
+            repository.deleteTransaction(transaction.id)
+        }
+    }
+
+    fun updateDailyIncrease(amount: Double) {
+        viewModelScope.launch {
+            repository.updateDailyIncrease(amount)
+        }
+    }
+
+    fun applySurplus() {
+        viewModelScope.launch {
+            val currentTotal = totalAmount.first()
+            val surplus = dailyIncrease.first()
+            if (surplus > 0) { // Only apply if a surplus is set
+                repository.updateTotalAmount(currentTotal + surplus)
+            }
+        }
+    }
+
+    fun reset() {
+        viewModelScope.launch {
+            repository.updateTotalAmount(0.0)
+            repository.updateDailyIncrease(20.0)
+            repository.clearTransactions()
+            repository.resetDaysToDisplay()
+        }
+    }
+}
+
+class CounterViewModelFactory(private val application: Application) : ViewModelProvider.Factory {
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        if (modelClass.isAssignableFrom(CounterViewModel::class.java)) {
+            @Suppress("UNCHECKED_CAST")
+            return CounterViewModel(CounterDataRepository(application)) as T
+        }
+        throw IllegalArgumentException("Unknown ViewModel class")
+    }
+}
