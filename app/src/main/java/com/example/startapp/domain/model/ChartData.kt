@@ -7,10 +7,11 @@ data class ChartPoint(
     val income: Double
 )
 
-data class CategoryExpenseSlice(
+data class CategorySlice(
     val category: String,
     val total: Double,
-    val percentage: Double
+    val percentage: Double,
+    val monthlyAverage: Double
 )
 
 data class ChartStats(
@@ -19,7 +20,7 @@ data class ChartStats(
     val totalIncome: Double,
     val avgSurplus: Double,
     val surplusStdDev: Double,
-    val expenseRatio: Double,
     val savingsRatio: Double,
-    val categoryExpenses: List<CategoryExpenseSlice>
+    val categoryExpenses: List<CategorySlice>,
+    val categoryIncome: List<CategorySlice>
 )

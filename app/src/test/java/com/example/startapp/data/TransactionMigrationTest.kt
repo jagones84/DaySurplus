@@ -1,8 +1,15 @@
 package com.example.startapp.data
 
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import androidx.datastore.preferences.core.Preferences
+import com.example.startapp.domain.model.CategoryType
 import com.example.startapp.domain.model.ExpenseCategory
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import java.io.File
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 
 class TransactionMigrationTest {
 
@@ -18,14 +25,31 @@ class TransactionMigrationTest {
     }
 
     @Test
-    fun legacyIncomeWithoutCategoryBecomesIncome() {
-        val migrated = normalizeTransactionCategory(
-            amount = 1000.0,
-            description = "salary",
-            category = ""
+    fun legacyIncomeWithoutCategoryGetsInferredIncomeCategory() {
+        assertEquals(
+            "Salary",
+            normalizeTransactionCategory(
+                amount = 1000.0,
+                description = "stipendio marzo",
+                category = ""
+            )
         )
-
-        assertEquals("Income", migrated)
+        assertEquals(
+            "Refund",
+            normalizeTransactionCategory(
+                amount = 80.0,
+                description = "rimborso assicurazione",
+                category = ""
+            )
+        )
+        assertEquals(
+            "Other Income",
+            normalizeTransactionCategory(
+                amount = 20.0,
+                description = "entrata strana",
+                category = ""
+            )
+        )
     }
 
     @Test
@@ -92,5 +116,26 @@ class TransactionMigrationTest {
             ExpenseCategory.DIGITAL.label,
             normalizeTransactionCategory(-10.0, "patreon", "Subscriptions")
         )
+    }
+
+    @Test
+    fun addCustomCategory_persistsSeparatedExpenseAndIncomeCatalogs() = runBlocking {
+        val repository = buildRepository()
+
+        repository.addCustomCategory(CategoryType.EXPENSE, "Casa Vacanze")
+        repository.addCustomCategory(CategoryType.INCOME, "Dividends")
+
+        assertEquals(listOf("Casa Vacanze"), repository.expenseCustomCategories.first())
+        assertEquals(listOf("Dividends"), repository.incomeCustomCategories.first())
+    }
+
+    private fun buildRepository(): CounterDataRepository {
+        val tempFile = File.createTempFile("counter-data-repository-test", ".preferences_pb").apply {
+            deleteOnExit()
+        }
+        val dataStore: DataStore<Preferences> = PreferenceDataStoreFactory.create(
+            produceFile = { tempFile }
+        )
+        return CounterDataRepository(dataStore)
     }
 }

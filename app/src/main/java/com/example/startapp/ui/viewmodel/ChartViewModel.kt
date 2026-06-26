@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.startapp.data.CounterDataRepository
 import com.example.startapp.data.model.DailySnapshot
 import com.example.startapp.data.model.Transaction
+import com.example.startapp.domain.model.CategorySlice
 import com.example.startapp.domain.model.ChartPoint
 import com.example.startapp.domain.model.ChartStats
 import com.example.startapp.domain.model.TimeFrame
@@ -19,24 +20,17 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-internal data class OverallTotals(
+internal data class PeriodTotals(
     val totalExpenses: Double,
-    val totalIncome: Double,
-    val expenseRatio: Double
+    val totalIncome: Double
 )
 
-internal fun calculateExpenseRatio(totalExpenses: Double, totalIncome: Double): Double {
-    return if (totalIncome > 0.0) totalExpenses / totalIncome else 0.0
-}
+private const val AVERAGE_DAYS_PER_MONTH = 30.4375
 
-internal fun calculateSavingsRatio(expenseRatio: Double): Double {
-    return 1 - expenseRatio
-}
-
-internal fun calculateOverallTotals(
+internal fun calculatePeriodTotals(
     snapshots: List<DailySnapshot>,
     transactions: List<Transaction>
-): OverallTotals {
+): PeriodTotals {
     val sortedSnapshots = snapshots.sortedBy { it.date }
     val totalExpenses = transactions
         .filter { it.amount < 0 }
@@ -49,11 +43,89 @@ internal fun calculateOverallTotals(
         totalExpenses
     }
 
-    return OverallTotals(
+    return PeriodTotals(
         totalExpenses = totalExpenses,
-        totalIncome = totalIncome,
-        expenseRatio = calculateExpenseRatio(totalExpenses, totalIncome)
+        totalIncome = totalIncome
     )
+}
+
+internal fun calculateSavingRatioToDate(
+    snapshots: List<DailySnapshot>,
+    transactions: List<Transaction>
+): Double {
+    val sortedSnapshots = snapshots.sortedBy { it.date }
+    if (sortedSnapshots.isEmpty()) {
+        return 0.0
+    }
+
+    val totalExpenses = transactions
+        .filter { it.amount < 0 }
+        .sumOf { -it.amount }
+
+    val netSurplusRaw = if (sortedSnapshots.size >= 2) {
+        sortedSnapshots.last().amount - sortedSnapshots.first().amount
+    } else {
+        sortedSnapshots.last().amount
+    }
+
+    val totalIncome = totalExpenses + netSurplusRaw
+    val saved = netSurplusRaw.coerceAtLeast(0.0)
+    return if (totalIncome > 0.0) saved / totalIncome else 0.0
+}
+
+internal fun calculateMonthlyAverage(total: Double, coveredDays: Int): Double {
+    return total / maxOf(coveredDays, 1) * AVERAGE_DAYS_PER_MONTH
+}
+
+internal fun buildExpenseCategorySlices(
+    transactions: List<Transaction>,
+    coveredDays: Int
+): List<CategorySlice> {
+    val totals = transactions
+        .filter { it.amount < 0 }
+        .groupBy { it.category.ifBlank { "Other" } }
+        .mapValues { (_, items) -> items.sumOf { -it.amount } }
+
+    val totalExpenses = totals.values.sum()
+    return totals.entries
+        .sortedByDescending { it.value }
+        .map { (category, total) ->
+            CategorySlice(
+                category = category,
+                total = total,
+                percentage = if (totalExpenses > 0.0) total / totalExpenses else 0.0,
+                monthlyAverage = calculateMonthlyAverage(total, coveredDays)
+            )
+        }
+}
+
+internal fun buildIncomeCategorySlices(
+    transactions: List<Transaction>,
+    coveredDays: Int,
+    dailyIncrease: Double
+): List<CategorySlice> {
+    val totals = transactions
+        .filter { it.amount >= 0 }
+        .groupBy { it.category.ifBlank { "Other Income" } }
+        .mapValues { (_, items) -> items.sumOf { it.amount } }
+        .toMutableMap()
+
+    val dailySurplusTotal = (dailyIncrease * coveredDays).takeIf { it > 0.0 } ?: 0.0
+    if (dailySurplusTotal > 0.0) {
+        totals["Daily Surplus"] = (totals["Daily Surplus"] ?: 0.0) + dailySurplusTotal
+    }
+
+    val totalIncome = totals.values.sum()
+    return totals.entries
+        .sortedByDescending { it.value }
+        .map { (category, total) ->
+            CategorySlice(
+                category = category,
+                total = total,
+                percentage = if (totalIncome > 0.0) total / totalIncome else 0.0,
+                monthlyAverage = calculateMonthlyAverage(total, coveredDays)
+            )
+        }
 }
 
 class ChartViewModel(private val repository: CounterDataRepository) : ViewModel() {
@@ -75,9 +147,10 @@ class ChartViewModel(private val repository: CounterDataRepository) : ViewModel(
                 repository.dailySnapshots,
                 repository.transactions,
                 repository.daysToDisplay,
+                repository.dailyIncrease,
                 _timeFrame
-            ) { snapshots, transactions, daysToDisplay, selectedTimeFrame ->
-                calculateChartData(snapshots, transactions, daysToDisplay, selectedTimeFrame)
+            ) { snapshots, transactions, daysToDisplay, dailyIncrease, selectedTimeFrame ->
+                calculateChartData(snapshots, transactions, daysToDisplay, selectedTimeFrame, dailyIncrease)
             }.collect { stats ->
                 _chartStats.value = stats
             }
@@ -92,7 +165,8 @@ class ChartViewModel(private val repository: CounterDataRepository) : ViewModel(
         snapshots: List<DailySnapshot>,
         transactions: List<Transaction>,
         daysToDisplay: Int,
-        timeFrame: TimeFrame
+        timeFrame: TimeFrame,
+        dailyIncrease: Double
     ): ChartStats {
         // 1. Filter by daysToDisplay (from NOW backwards)
         // User wants "history in the main page shall be a perido coherent with the number of days in the chart sheet"
@@ -109,9 +183,9 @@ class ChartViewModel(private val repository: CounterDataRepository) : ViewModel(
                 totalIncome = 0.0,
                 avgSurplus = 0.0,
                 surplusStdDev = 0.0,
-                expenseRatio = 0.0,
                 savingsRatio = 0.0,
-                categoryExpenses = emptyList()
+                categoryExpenses = emptyList(),
+                categoryIncome = emptyList()
             )
         }
 
@@ -156,40 +230,27 @@ class ChartViewModel(private val repository: CounterDataRepository) : ViewModel(
             points.add(ChartPoint(aggregatedSnapshots[0].date, aggregatedSnapshots[0].amount, 0.0, 0.0))
         }
 
-        val overallTotals = calculateOverallTotals(
+        val periodTotals = calculatePeriodTotals(
             snapshots = relevantSnapshots,
             transactions = relevantTransactions
         )
-
-        val expenseTransactions = relevantTransactions.filter { it.amount < 0 }
-        val categoryTotals = expenseTransactions
-            .groupBy { transaction ->
-                transaction.category.ifBlank { "Other" }
-            }
-            .map { (category, items) ->
-                category to items.sumOf { -it.amount }
-            }
-            .sortedByDescending { it.second }
-
-        val expenseRatio = overallTotals.expenseRatio
-        val savingsRatio = if (overallTotals.totalIncome > 0.0) calculateSavingsRatio(expenseRatio) else 0.0
-        val categoryExpenses = categoryTotals.map { (category, total) ->
-            com.example.startapp.domain.model.CategoryExpenseSlice(
-                category = category,
-                total = total,
-                percentage = if (overallTotals.totalExpenses > 0.0) total / overallTotals.totalExpenses else 0.0
-            )
-        }
+        val coveredDays = maxOf(daysToDisplay, 1)
+        val categoryExpenses = buildExpenseCategorySlices(relevantTransactions, coveredDays)
+        val categoryIncome = buildIncomeCategorySlices(relevantTransactions, coveredDays, dailyIncrease)
+        val savingRatioToDate = calculateSavingRatioToDate(
+            snapshots = snapshots,
+            transactions = transactions
+        )
 
         return ChartStats(
             points = points,
-            totalExpenses = overallTotals.totalExpenses,
-            totalIncome = overallTotals.totalIncome,
+            totalExpenses = periodTotals.totalExpenses,
+            totalIncome = periodTotals.totalIncome,
             avgSurplus = if (surplusValues.isNotEmpty()) surplusValues.average() else 0.0,
             surplusStdDev = calculateStdDev(surplusValues),
-            expenseRatio = expenseRatio,
-            savingsRatio = savingsRatio,
-            categoryExpenses = categoryExpenses
+            savingsRatio = savingRatioToDate,
+            categoryExpenses = categoryExpenses,
+            categoryIncome = categoryIncome
         )
     }
 

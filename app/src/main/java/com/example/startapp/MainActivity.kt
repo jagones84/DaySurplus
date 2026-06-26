@@ -6,8 +6,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.List
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -68,7 +68,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             )
                             NavigationBarItem(
-                                icon = { Icon(Icons.Filled.List, contentDescription = "Chart") },
+                                icon = { Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Chart") },
                                 label = { Text("Chart") },
                                 selected = currentDestination?.route == "chart",
                                 onClick = {

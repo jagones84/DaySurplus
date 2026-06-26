@@ -151,6 +151,14 @@ enum class ExpenseCategory(
             "venerdi"
         )
 
+        private val incomeKeywordMap = linkedMapOf(
+            "Salary" to listOf("salary", "stipendio", "ral", "payroll", "busta paga"),
+            "Family" to listOf("family", "famiglia", "genitori", "mamma", "papa", "papà", "padre", "madre"),
+            "Refund" to listOf("refund", "rimborso", "reimbursement", "reso", "cashback"),
+            "Sales" to listOf("sale", "sales", "vendita", "venduto", "sold", "marketplace", "subito"),
+            "Bonus" to listOf("bonus", "premio", "reward", "incentivo")
+        )
+
         val expenseCategories: List<ExpenseCategory> = listOf(
             FOOD,
             TRANSPORT,
@@ -184,6 +192,13 @@ enum class ExpenseCategory(
             return expenseCategories.firstOrNull { category ->
                 category.keywords.any { keyword -> normalized.contains(normalizeDescription(keyword)) }
             }?.label ?: OTHER.label
+        }
+
+        fun inferIncomeCategory(description: String): String {
+            val normalized = normalizeDescription(description)
+            return incomeKeywordMap.entries.firstOrNull { (_, keywords) ->
+                keywords.any(normalized::contains)
+            }?.key ?: "Other Income"
         }
 
         private fun normalizeDescription(value: String): String {

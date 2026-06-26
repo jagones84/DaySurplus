@@ -2,34 +2,43 @@ package com.example.startapp.domain.model
 
 import com.example.startapp.data.model.Transaction
 
-data class ExpenseGroup(
+data class TransactionGroup(
     val category: String,
     val total: Double,
     val transactions: List<Transaction>
 )
 
 data class GroupedTransactionState(
-    val incomeTransactions: List<Transaction>,
-    val expenseGroups: List<ExpenseGroup>
+    val incomeGroups: List<TransactionGroup>,
+    val expenseGroups: List<TransactionGroup>
 )
 
 fun buildGroupedTransactionState(transactions: List<Transaction>): GroupedTransactionState {
     val sorted = transactions.sortedByDescending { it.date }
-    val incomeTransactions = sorted.filter { it.amount >= 0 }
-    val expenseGroups = sorted
-        .filter { it.amount < 0 }
-        .groupBy { it.category.ifBlank { ExpenseCategory.OTHER.label } }
-        .map { (category, items) ->
-            ExpenseGroup(
-                category = category,
-                total = items.sumOf { -it.amount },
-                transactions = items
-            )
-        }
-        .sortedByDescending { it.total }
+
+    fun buildGroups(source: List<Transaction>, fallbackCategory: String, absoluteTotal: Boolean): List<TransactionGroup> {
+        return source
+            .groupBy { it.category.ifBlank { fallbackCategory } }
+            .map { (category, items) ->
+                TransactionGroup(
+                    category = category,
+                    total = if (absoluteTotal) items.sumOf { -it.amount } else items.sumOf { it.amount },
+                    transactions = items
+                )
+            }
+            .sortedByDescending { it.total }
+    }
 
     return GroupedTransactionState(
-        incomeTransactions = incomeTransactions,
-        expenseGroups = expenseGroups
+        incomeGroups = buildGroups(
+            source = sorted.filter { it.amount >= 0 },
+            fallbackCategory = "Other Income",
+            absoluteTotal = false
+        ),
+        expenseGroups = buildGroups(
+            source = sorted.filter { it.amount < 0 },
+            fallbackCategory = ExpenseCategory.OTHER.label,
+            absoluteTotal = true
+        )
     )
 }

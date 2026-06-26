@@ -45,8 +45,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.startapp.data.model.Transaction
+import com.example.startapp.domain.model.CategoryCatalog
+import com.example.startapp.domain.model.CategoryType
 import com.example.startapp.domain.model.ExpenseCategory
-import com.example.startapp.domain.model.ExpenseGroup
+import com.example.startapp.domain.model.TransactionGroup
 import com.example.startapp.domain.model.buildGroupedTransactionState
 import com.example.startapp.ui.viewmodel.CounterViewModel
 import java.text.SimpleDateFormat
@@ -61,14 +63,21 @@ fun CounterScreen(viewModel: CounterViewModel) {
     val dailyIncrease by viewModel.dailyIncrease.collectAsState()
     val transactions by viewModel.transactions.collectAsState()
     val daysToDisplay by viewModel.daysToDisplay.collectAsState()
+    val expenseCustomCategories by viewModel.expenseCustomCategories.collectAsState()
+    val incomeCustomCategories by viewModel.incomeCustomCategories.collectAsState()
 
     var manualAmount by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
     var dailyIncreaseAmount by remember { mutableStateOf(dailyIncrease.toString()) }
     var showResetDialog by remember { mutableStateOf(false) }
     var daysInput by remember { mutableStateOf(daysToDisplay.toString()) }
+    var selectedIncomeCategory by remember { mutableStateOf("Salary") }
     var selectedExpenseCategory by remember { mutableStateOf(ExpenseCategory.FOOD.label) }
-    var categoryMenuExpanded by remember { mutableStateOf(false) }
+    var incomeCategoryMenuExpanded by remember { mutableStateOf(false) }
+    var expenseCategoryMenuExpanded by remember { mutableStateOf(false) }
+    var showNewCategoryDialog by remember { mutableStateOf(false) }
+    var pendingCategoryType by remember { mutableStateOf<CategoryType?>(null) }
+    var newCategoryName by remember { mutableStateOf("") }
 
     val dateFormat = remember { SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()) }
     val expandedCategories = remember { mutableStateMapOf<String, Boolean>() }
@@ -106,6 +115,54 @@ fun CounterScreen(viewModel: CounterViewModel) {
             },
             dismissButton = {
                 TextButton(onClick = { showResetDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    if (showNewCategoryDialog && pendingCategoryType != null) {
+        AlertDialog(
+            onDismissRequest = {
+                showNewCategoryDialog = false
+                pendingCategoryType = null
+                newCategoryName = ""
+            },
+            title = { Text("New Category") },
+            text = {
+                OutlinedTextField(
+                    value = newCategoryName,
+                    onValueChange = { newCategoryName = it },
+                    label = { Text("Category Name") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val type = pendingCategoryType ?: return@TextButton
+                        viewModel.addCustomCategory(type, newCategoryName) { created ->
+                            when (type) {
+                                CategoryType.EXPENSE -> selectedExpenseCategory = created
+                                CategoryType.INCOME -> selectedIncomeCategory = created
+                            }
+                            showNewCategoryDialog = false
+                            pendingCategoryType = null
+                            newCategoryName = ""
+                        }
+                    }
+                ) {
+                    Text("Save")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showNewCategoryDialog = false
+                        pendingCategoryType = null
+                        newCategoryName = ""
+                    }
+                ) {
                     Text("Cancel")
                 }
             }
@@ -168,8 +225,47 @@ fun CounterScreen(viewModel: CounterViewModel) {
                     Spacer(modifier = Modifier.height(8.dp))
 
                     ExposedDropdownMenuBox(
-                        expanded = categoryMenuExpanded,
-                        onExpandedChange = { categoryMenuExpanded = !categoryMenuExpanded }
+                        expanded = incomeCategoryMenuExpanded,
+                        onExpandedChange = { incomeCategoryMenuExpanded = !incomeCategoryMenuExpanded }
+                    ) {
+                        OutlinedTextField(
+                            value = selectedIncomeCategory,
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Income Category") },
+                            trailingIcon = {
+                                ExposedDropdownMenuDefaults.TrailingIcon(expanded = incomeCategoryMenuExpanded)
+                            },
+                            modifier = Modifier
+                                .menuAnchor()
+                                .fillMaxWidth()
+                        )
+                        DropdownMenu(
+                            expanded = incomeCategoryMenuExpanded,
+                            onDismissRequest = { incomeCategoryMenuExpanded = false }
+                        ) {
+                            CategoryCatalog.dropdownOptions(CategoryType.INCOME, incomeCustomCategories).forEach { category ->
+                                DropdownMenuItem(
+                                    text = { Text(category) },
+                                    onClick = {
+                                        if (category == CategoryCatalog.NEW_CATEGORY_OPTION) {
+                                            pendingCategoryType = CategoryType.INCOME
+                                            showNewCategoryDialog = true
+                                        } else {
+                                            selectedIncomeCategory = category
+                                        }
+                                        incomeCategoryMenuExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    ExposedDropdownMenuBox(
+                        expanded = expenseCategoryMenuExpanded,
+                        onExpandedChange = { expenseCategoryMenuExpanded = !expenseCategoryMenuExpanded }
                     ) {
                         OutlinedTextField(
                             value = selectedExpenseCategory,
@@ -177,22 +273,27 @@ fun CounterScreen(viewModel: CounterViewModel) {
                             readOnly = true,
                             label = { Text("Expense Category") },
                             trailingIcon = {
-                                ExposedDropdownMenuDefaults.TrailingIcon(expanded = categoryMenuExpanded)
+                                ExposedDropdownMenuDefaults.TrailingIcon(expanded = expenseCategoryMenuExpanded)
                             },
                             modifier = Modifier
                                 .menuAnchor()
                                 .fillMaxWidth()
                         )
                         DropdownMenu(
-                            expanded = categoryMenuExpanded,
-                            onDismissRequest = { categoryMenuExpanded = false }
+                            expanded = expenseCategoryMenuExpanded,
+                            onDismissRequest = { expenseCategoryMenuExpanded = false }
                         ) {
-                            ExpenseCategory.expenseCategories.forEach { category ->
+                            CategoryCatalog.dropdownOptions(CategoryType.EXPENSE, expenseCustomCategories).forEach { category ->
                                 DropdownMenuItem(
-                                    text = { Text(category.label) },
+                                    text = { Text(category) },
                                     onClick = {
-                                        selectedExpenseCategory = category.label
-                                        categoryMenuExpanded = false
+                                        if (category == CategoryCatalog.NEW_CATEGORY_OPTION) {
+                                            pendingCategoryType = CategoryType.EXPENSE
+                                            showNewCategoryDialog = true
+                                        } else {
+                                            selectedExpenseCategory = category
+                                        }
+                                        expenseCategoryMenuExpanded = false
                                     }
                                 )
                             }
@@ -209,7 +310,7 @@ fun CounterScreen(viewModel: CounterViewModel) {
                             viewModel.addAmount(
                                 amount = manualAmount.toDoubleOrNull() ?: 0.0,
                                 description = description,
-                                category = ExpenseCategory.INCOME.label
+                                category = selectedIncomeCategory
                             )
                             manualAmount = ""
                             description = ""
@@ -288,22 +389,29 @@ fun CounterScreen(viewModel: CounterViewModel) {
             }
         }
 
-        if (groupedFilteredTransactions.incomeTransactions.isNotEmpty()) {
+        if (groupedFilteredTransactions.incomeGroups.isNotEmpty()) {
             item {
                 Text(
-                    text = "Income",
+                    text = "Income By Category",
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.fillMaxWidth()
                 )
             }
+        }
 
-            items(items = groupedFilteredTransactions.incomeTransactions, key = { it.id }) { transaction ->
-                TransactionRow(
-                    transaction = transaction,
-                    dateFormat = dateFormat,
-                    onDelete = viewModel::deleteTransaction
-                )
-            }
+        items(items = groupedFilteredTransactions.incomeGroups, key = { "income-${it.category}" }) { group ->
+            val groupKey = "income-${group.category}"
+            val isExpanded = expandedCategories[groupKey] ?: true
+            CategoryGroupCard(
+                group = group,
+                entryLabel = "income entries",
+                isExpanded = isExpanded,
+                onToggle = {
+                    expandedCategories[groupKey] = !isExpanded
+                },
+                dateFormat = dateFormat,
+                onDelete = viewModel::deleteTransaction
+            )
         }
 
         if (groupedFilteredTransactions.expenseGroups.isNotEmpty()) {
@@ -317,12 +425,14 @@ fun CounterScreen(viewModel: CounterViewModel) {
         }
 
         items(items = groupedFilteredTransactions.expenseGroups, key = { it.category }) { group ->
-            val isExpanded = expandedCategories[group.category] ?: true
+            val groupKey = "expense-${group.category}"
+            val isExpanded = expandedCategories[groupKey] ?: true
             CategoryGroupCard(
                 group = group,
+                entryLabel = "expenses",
                 isExpanded = isExpanded,
                 onToggle = {
-                    expandedCategories[group.category] = !isExpanded
+                    expandedCategories[groupKey] = !isExpanded
                 },
                 dateFormat = dateFormat,
                 onDelete = viewModel::deleteTransaction
@@ -355,7 +465,8 @@ fun CounterScreen(viewModel: CounterViewModel) {
 
 @Composable
 private fun CategoryGroupCard(
-    group: ExpenseGroup,
+    group: TransactionGroup,
+    entryLabel: String,
     isExpanded: Boolean,
     onToggle: () -> Unit,
     dateFormat: SimpleDateFormat,
@@ -381,7 +492,7 @@ private fun CategoryGroupCard(
                         style = MaterialTheme.typography.titleSmall
                     )
                     Text(
-                        text = "${group.transactions.size} expenses - ${String.format("%.2f €", group.total)}",
+                        text = "${group.transactions.size} $entryLabel - ${String.format("%.2f €", group.total)}",
                         style = MaterialTheme.typography.bodySmall
                     )
                 }

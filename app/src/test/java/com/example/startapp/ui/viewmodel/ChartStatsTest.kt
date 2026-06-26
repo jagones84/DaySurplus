@@ -4,25 +4,16 @@ import com.example.startapp.data.model.DailySnapshot
 import com.example.startapp.data.model.Transaction
 import com.example.startapp.domain.model.ExpenseCategory
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ChartStatsTest {
 
     @Test
-    fun expenseRatioIsOverallExpensesDividedByOverallIncome() {
-        assertEquals(0.25, calculateExpenseRatio(50.0, 200.0), 0.0001)
-    }
-
-    @Test
-    fun savingRatioRepresentsSavedFractionOfTotalIncome() {
-        assertEquals(0.75, calculateSavingsRatio(0.25), 0.0001)
-    }
-
-    @Test
-    fun overallTotalsStayTheSameAcrossChartTimeframes() {
+    fun savingRatioToDate_isNetSurplusDividedByTotalIncomeToDate() {
         val now = 1_700_000_000_000L
         val snapshots = listOf(
-            DailySnapshot(date = now - 3_000L, amount = 100.0),
+            DailySnapshot(date = now - 3_000L, amount = 0.0),
             DailySnapshot(date = now - 2_000L, amount = 120.0),
             DailySnapshot(date = now - 1_000L, amount = 140.0)
         )
@@ -31,14 +22,32 @@ class ChartStatsTest {
             Transaction(amount = -5.0, date = now - 1_500L, description = "steam", category = ExpenseCategory.GAMING.label)
         )
 
-        val totals = calculateOverallTotals(
+        val savingRatio = calculateSavingRatioToDate(
             snapshots = snapshots,
             transactions = transactions
         )
 
-        assertEquals(15.0, totals.totalExpenses, 0.0001)
-        assertEquals(55.0, totals.totalIncome, 0.0001)
-        assertEquals(15.0 / 55.0, totals.expenseRatio, 0.0001)
-        assertEquals(1 - (15.0 / 55.0), calculateSavingsRatio(totals.expenseRatio), 0.0001)
+        assertEquals(140.0 / 155.0, savingRatio, 0.0001)
+    }
+
+    @Test
+    fun incomeCategorySlicesIncludeSyntheticDailySurplus() {
+        val now = 1_700_000_000_000L
+        val slices = buildIncomeCategorySlices(
+            transactions = listOf(
+                Transaction(amount = 1000.0, date = now, description = "stipendio", category = "Salary"),
+                Transaction(amount = 100.0, date = now - 1_000L, description = "rimborso", category = "Refund"),
+            ),
+            coveredDays = 30,
+            dailyIncrease = 20.0
+        )
+
+        assertTrue(slices.any { it.category == "Daily Surplus" && it.total == 600.0 })
+        assertTrue(slices.any { it.category == "Salary" && it.total == 1000.0 })
+    }
+
+    @Test
+    fun monthlyAverageIsNormalizedByCoveredDays() {
+        assertEquals(304.375, calculateMonthlyAverage(total = 300.0, coveredDays = 30), 0.0001)
     }
 }

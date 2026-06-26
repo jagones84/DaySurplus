@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.startapp.data.CounterDataRepository
 import com.example.startapp.data.model.DailySnapshot
 import com.example.startapp.data.model.Transaction
+import com.example.startapp.domain.model.CategoryType
 import com.example.startapp.domain.model.ExpenseCategory
 import com.example.startapp.domain.model.GroupedTransactionState
 import com.example.startapp.domain.model.buildGroupedTransactionState
@@ -35,6 +36,12 @@ class CounterViewModel(private val repository: CounterDataRepository) : ViewMode
     private val _daysToDisplay = MutableStateFlow(30) // Default value, will be updated from repository
     val daysToDisplay = _daysToDisplay.asStateFlow()
 
+    private val _expenseCustomCategories = MutableStateFlow<List<String>>(emptyList())
+    val expenseCustomCategories = _expenseCustomCategories.asStateFlow()
+
+    private val _incomeCustomCategories = MutableStateFlow<List<String>>(emptyList())
+    val incomeCustomCategories = _incomeCustomCategories.asStateFlow()
+
     init {
         viewModelScope.launch {
             repository.totalAmount.collect { _totalAmount.value = it }
@@ -60,6 +67,14 @@ class CounterViewModel(private val repository: CounterDataRepository) : ViewMode
 
         viewModelScope.launch {
             repository.daysToDisplay.collect { _daysToDisplay.value = it }
+        }
+
+        viewModelScope.launch {
+            repository.expenseCustomCategories.collect { _expenseCustomCategories.value = it }
+        }
+
+        viewModelScope.launch {
+            repository.incomeCustomCategories.collect { _incomeCustomCategories.value = it }
         }
     }
 
@@ -102,6 +117,12 @@ class CounterViewModel(private val repository: CounterDataRepository) : ViewMode
     fun deleteTransaction(transaction: Transaction) {
         viewModelScope.launch {
             repository.deleteTransaction(transaction.id)
+        }
+    }
+
+    fun addCustomCategory(type: CategoryType, name: String, onCreated: (String) -> Unit = {}) {
+        viewModelScope.launch {
+            repository.addCustomCategory(type, name)?.let(onCreated)
         }
     }
 

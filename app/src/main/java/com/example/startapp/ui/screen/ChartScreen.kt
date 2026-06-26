@@ -27,6 +27,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.example.startapp.R
+import com.example.startapp.domain.model.CategorySlice
 import com.example.startapp.domain.model.TimeFrame
 import com.example.startapp.ui.viewmodel.ChartViewModel
 import com.github.mikephil.charting.charts.LineChart
@@ -88,11 +89,7 @@ fun ChartScreen(viewModel: ChartViewModel) {
             val topCategory = stats.categoryExpenses.firstOrNull()
 
             Text(
-                text = "Expense Ratio (Expenses/Gains): %.2f%%".format(stats.expenseRatio * 100),
-                modifier = Modifier.padding(vertical = 4.dp)
-            )
-            Text(
-                text = "Saving Ratio (Saved/Gains): %.2f%%".format(stats.savingsRatio * 100),
+                text = "Saving Ratio (Surplus/Total Income To Date): %.2f%%".format(stats.savingsRatio * 100),
                 modifier = Modifier.padding(vertical = 4.dp)
             )
             Text(
@@ -226,42 +223,20 @@ fun ChartScreen(viewModel: ChartViewModel) {
             )
 
             if (stats.categoryExpenses.isNotEmpty()) {
-                AndroidView(
-                    factory = { context ->
-                        PieChart(context).apply {
-                            setNoDataText("No expense categories available")
-                            description.isEnabled = false
-                            legend.isEnabled = false
-                            setEntryLabelColor(Color.WHITE)
-                            setUsePercentValues(true)
-                            isDrawHoleEnabled = true
-                            setHoleColor(Color.TRANSPARENT)
-                            centerText = "Expenses"
-                            setCenterTextColor(Color.WHITE)
-                        }
-                    },
-                    update = { pieChart ->
-                        val entries = stats.categoryExpenses.map {
-                            PieEntry(it.total.toFloat(), it.category)
-                        }
-                        val dataSet = PieDataSet(entries, "Expense Categories").apply {
-                            colors = ColorTemplate.MATERIAL_COLORS.toList() + ColorTemplate.COLORFUL_COLORS.toList()
-                            valueTextColor = Color.WHITE
-                            valueTextSize = 12f
-                            sliceSpace = 2f
-                        }
-                        pieChart.data = PieData(dataSet)
-                        pieChart.invalidate()
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(320.dp)
+                CategoryPieChart(
+                    title = "Expenses",
+                    emptyText = "No expense categories available",
+                    slices = stats.categoryExpenses
                 )
 
                 Column(modifier = Modifier.fillMaxWidth()) {
                     stats.categoryExpenses.forEach { slice ->
                         Text(
-                            text = "${slice.category}: %.2f € (%.2f%%)".format(slice.total, slice.percentage * 100),
+                            text = "${slice.category}: %.2f € | %.2f%% | %.2f €/month".format(
+                                slice.total,
+                                slice.percentage * 100,
+                                slice.monthlyAverage
+                            ),
                             style = MaterialTheme.typography.bodyMedium,
                             modifier = Modifier.padding(vertical = 2.dp)
                         )
@@ -273,8 +248,80 @@ fun ChartScreen(viewModel: ChartViewModel) {
                     modifier = Modifier.padding(vertical = 8.dp)
                 )
             }
+
+            Text(
+                text = "Income Categories",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(top = 20.dp, bottom = 8.dp)
+            )
+
+            if (stats.categoryIncome.isNotEmpty()) {
+                CategoryPieChart(
+                    title = "Income",
+                    emptyText = "No income categories available",
+                    slices = stats.categoryIncome
+                )
+
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    stats.categoryIncome.forEach { slice ->
+                        Text(
+                            text = "${slice.category}: %.2f € | %.2f%% | %.2f €/month".format(
+                                slice.total,
+                                slice.percentage * 100,
+                                slice.monthlyAverage
+                            ),
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(vertical = 2.dp)
+                        )
+                    }
+                }
+            } else {
+                Text(
+                    text = "No income data available for the selected period.",
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
+            }
         }
     }
+}
+
+@Composable
+private fun CategoryPieChart(
+    title: String,
+    emptyText: String,
+    slices: List<CategorySlice>
+) {
+    AndroidView(
+        factory = { context ->
+            PieChart(context).apply {
+                setNoDataText(emptyText)
+                description.isEnabled = false
+                legend.isEnabled = false
+                setEntryLabelColor(Color.WHITE)
+                setUsePercentValues(true)
+                isDrawHoleEnabled = true
+                setHoleColor(Color.TRANSPARENT)
+                centerText = title
+                setCenterTextColor(Color.WHITE)
+            }
+        },
+        update = { pieChart ->
+            val entries = slices.map {
+                PieEntry(it.total.toFloat(), it.category)
+            }
+            val dataSet = PieDataSet(entries, title).apply {
+                colors = ColorTemplate.MATERIAL_COLORS.toList() + ColorTemplate.COLORFUL_COLORS.toList()
+                valueTextColor = Color.WHITE
+                valueTextSize = 12f
+                sliceSpace = 2f
+            }
+            pieChart.data = PieData(dataSet)
+            pieChart.invalidate()
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(320.dp)
+    )
 }
 
 private class DaySurpMarkerView(context: Context) : MarkerView(context, R.layout.chart_marker) {
