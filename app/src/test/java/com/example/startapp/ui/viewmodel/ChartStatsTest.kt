@@ -3,11 +3,85 @@ package com.example.startapp.ui.viewmodel
 import com.example.startapp.data.model.DailySnapshot
 import com.example.startapp.data.model.Transaction
 import com.example.startapp.domain.model.ExpenseCategory
+import com.example.startapp.domain.model.TimeFrame
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ChartStatsTest {
+
+    @Test
+    fun calculateChartStatsForPeriod_filtersAllAnalyticsToSelectedPeriod() {
+        val now = 1_700_000_000_000L
+        val oldDate = now - (40L * 24 * 60 * 60 * 1000)
+        val inRangeDate = now - (5L * 24 * 60 * 60 * 1000)
+        val laterInRangeDate = now - (2L * 24 * 60 * 60 * 1000)
+
+        val stats = calculateChartStatsForPeriod(
+            snapshots = listOf(
+                DailySnapshot(date = oldDate, amount = 20.0),
+                DailySnapshot(date = inRangeDate, amount = 100.0),
+                DailySnapshot(date = laterInRangeDate, amount = 130.0)
+            ),
+            transactions = listOf(
+                Transaction(
+                    amount = -50.0,
+                    date = oldDate,
+                    description = "old rent",
+                    category = ExpenseCategory.OTHER.label
+                ),
+                Transaction(
+                    amount = -10.0,
+                    date = now - (3L * 24 * 60 * 60 * 1000),
+                    description = "farmacia",
+                    category = ExpenseCategory.HEALTH.label
+                )
+            ),
+            daysToDisplay = 30,
+            timeFrame = TimeFrame.Day,
+            dailyIncrease = 0.0,
+            now = now
+        )
+
+        assertEquals(10.0, stats.totalExpenses, 0.0001)
+        assertEquals(40.0, stats.totalIncome, 0.0001)
+        assertEquals(30.0 / 40.0, stats.savingsRatio, 0.0001)
+        assertEquals(1, stats.categoryExpenses.size)
+        assertEquals("Health", stats.categoryExpenses.single().category)
+        assertEquals(10.0, stats.categoryExpenses.single().total, 0.0001)
+        assertEquals(1, stats.topExpenseDescriptions.size)
+        assertEquals("farmacia", stats.topExpenseDescriptions.single().label)
+    }
+
+    @Test
+    fun calculateChartStatsForPeriod_returnsEmptyAnalyticsWhenPeriodHasNoSnapshots() {
+        val now = 1_700_000_000_000L
+
+        val stats = calculateChartStatsForPeriod(
+            snapshots = listOf(
+                DailySnapshot(date = now - (50L * 24 * 60 * 60 * 1000), amount = 20.0)
+            ),
+            transactions = listOf(
+                Transaction(
+                    amount = -25.0,
+                    date = now - (40L * 24 * 60 * 60 * 1000),
+                    description = "spesa",
+                    category = ExpenseCategory.FOOD.label
+                )
+            ),
+            daysToDisplay = 7,
+            timeFrame = TimeFrame.Day,
+            dailyIncrease = 0.0,
+            now = now
+        )
+
+        assertTrue(stats.points.isEmpty())
+        assertEquals(0.0, stats.totalExpenses, 0.0)
+        assertEquals(0.0, stats.totalIncome, 0.0)
+        assertEquals(0.0, stats.savingsRatio, 0.0)
+        assertTrue(stats.categoryExpenses.isEmpty())
+        assertTrue(stats.topExpenseDescriptions.isEmpty())
+    }
 
     @Test
     fun savingRatioToDate_isNetSurplusDividedByTotalIncomeToDate() {

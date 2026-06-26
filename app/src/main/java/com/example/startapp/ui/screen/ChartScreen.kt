@@ -89,7 +89,7 @@ fun ChartScreen(viewModel: ChartViewModel) {
             val topCategory = stats.categoryExpenses.firstOrNull()
 
             Text(
-                text = "Saving Ratio (Surplus/Total Income To Date): %.2f%%".format(stats.savingsRatio * 100),
+                text = "Saving Ratio (Selected Period): %.2f%%".format(stats.savingsRatio * 100),
                 modifier = Modifier.padding(vertical = 4.dp)
             )
             Text(
