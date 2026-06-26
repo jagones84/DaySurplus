@@ -281,6 +281,52 @@ fun ChartScreen(viewModel: ChartViewModel) {
                     modifier = Modifier.padding(vertical = 8.dp)
                 )
             }
+
+            Text(
+                text = "Analytics (Selected Period)",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(top = 20.dp, bottom = 8.dp)
+            )
+
+            if (stats.topExpenseDescriptions.isNotEmpty()) {
+                Text(
+                    text = "Top Expense Descriptions",
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.padding(bottom = 4.dp)
+                )
+                stats.topExpenseDescriptions.forEach { metric ->
+                    Text(
+                        text = "${metric.label}: %.2f €".format(metric.total),
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(vertical = 2.dp)
+                    )
+                }
+            } else {
+                Text(
+                    text = "No expense description data available.",
+                    modifier = Modifier.padding(vertical = 4.dp)
+                )
+            }
+
+            if (stats.topExpenseDays.isNotEmpty()) {
+                Text(
+                    text = "Top Expense Days",
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
+                )
+                stats.topExpenseDays.forEach { metric ->
+                    Text(
+                        text = "${metric.label}: %.2f €".format(metric.total),
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(vertical = 2.dp)
+                    )
+                }
+            } else {
+                Text(
+                    text = "No expense day data available.",
+                    modifier = Modifier.padding(vertical = 4.dp)
+                )
+            }
         }
     }
 }

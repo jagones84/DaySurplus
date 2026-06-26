@@ -10,6 +10,7 @@ import com.example.startapp.data.model.Transaction
 import com.example.startapp.domain.model.CategorySlice
 import com.example.startapp.domain.model.ChartPoint
 import com.example.startapp.domain.model.ChartStats
+import com.example.startapp.domain.model.RankedMetric
 import com.example.startapp.domain.model.TimeFrame
 import com.example.startapp.utils.calculateStdDev
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -128,6 +129,39 @@ internal fun buildIncomeCategorySlices(
         }
 }
 
+private fun normalizeMetricLabel(raw: String): String {
+    val normalized = raw
+        .trim()
+        .lowercase()
+        .replace("\\s+".toRegex(), " ")
+    return normalized.ifBlank { "(no description)" }
+}
+
+internal fun buildTopExpenseDescriptions(transactions: List<Transaction>): List<RankedMetric> {
+    val totals = transactions
+        .filter { it.amount < 0 }
+        .groupBy { normalizeMetricLabel(it.description) }
+        .mapValues { (_, items) -> items.sumOf { -it.amount } }
+
+    return totals.entries
+        .sortedByDescending { it.value }
+        .take(5)
+        .map { (label, total) -> RankedMetric(label = label, total = total) }
+}
+
+internal fun buildTopExpenseDays(transactions: List<Transaction>): List<RankedMetric> {
+    val format = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+    val totals = transactions
+        .filter { it.amount < 0 }
+        .groupBy { format.format(Date(it.date)) }
+        .mapValues { (_, items) -> items.sumOf { -it.amount } }
+
+    return totals.entries
+        .sortedByDescending { it.value }
+        .take(5)
+        .map { (label, total) -> RankedMetric(label = label, total = total) }
+}
+
 class ChartViewModel(private val repository: CounterDataRepository) : ViewModel() {
 
     private val _timeFrame = MutableStateFlow(TimeFrame.Day)
@@ -185,7 +219,9 @@ class ChartViewModel(private val repository: CounterDataRepository) : ViewModel(
                 surplusStdDev = 0.0,
                 savingsRatio = 0.0,
                 categoryExpenses = emptyList(),
-                categoryIncome = emptyList()
+                categoryIncome = emptyList(),
+                topExpenseDescriptions = emptyList(),
+                topExpenseDays = emptyList()
             )
         }
 
@@ -237,6 +273,8 @@ class ChartViewModel(private val repository: CounterDataRepository) : ViewModel(
         val coveredDays = maxOf(daysToDisplay, 1)
         val categoryExpenses = buildExpenseCategorySlices(relevantTransactions, coveredDays)
         val categoryIncome = buildIncomeCategorySlices(relevantTransactions, coveredDays, dailyIncrease)
+        val topExpenseDescriptions = buildTopExpenseDescriptions(relevantTransactions)
+        val topExpenseDays = buildTopExpenseDays(relevantTransactions)
         val savingRatioToDate = calculateSavingRatioToDate(
             snapshots = snapshots,
             transactions = transactions
@@ -250,7 +288,9 @@ class ChartViewModel(private val repository: CounterDataRepository) : ViewModel(
             surplusStdDev = calculateStdDev(surplusValues),
             savingsRatio = savingRatioToDate,
             categoryExpenses = categoryExpenses,
-            categoryIncome = categoryIncome
+            categoryIncome = categoryIncome,
+            topExpenseDescriptions = topExpenseDescriptions,
+            topExpenseDays = topExpenseDays
         )
     }
 

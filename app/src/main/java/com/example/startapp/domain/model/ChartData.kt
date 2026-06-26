@@ -14,6 +14,11 @@ data class CategorySlice(
     val monthlyAverage: Double
 )
 
+data class RankedMetric(
+    val label: String,
+    val total: Double
+)
+
 data class ChartStats(
     val points: List<ChartPoint>,
     val totalExpenses: Double,
@@ -22,5 +27,7 @@ data class ChartStats(
     val surplusStdDev: Double,
     val savingsRatio: Double,
     val categoryExpenses: List<CategorySlice>,
-    val categoryIncome: List<CategorySlice>
+    val categoryIncome: List<CategorySlice>,
+    val topExpenseDescriptions: List<RankedMetric>,
+    val topExpenseDays: List<RankedMetric>
 )
