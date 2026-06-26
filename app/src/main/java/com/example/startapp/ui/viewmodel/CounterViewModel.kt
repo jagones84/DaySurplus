@@ -9,11 +9,15 @@ import com.example.startapp.data.backup.BackupCodec
 import com.example.startapp.data.backup.BackupValidator
 import com.example.startapp.data.model.DailySnapshot
 import com.example.startapp.data.model.Transaction
+import com.example.startapp.domain.defaultDateRange
+import com.example.startapp.domain.filterTransactionsByDateRange
 import com.example.startapp.domain.model.CategoryType
+import com.example.startapp.domain.model.DateRangeFilter
 import com.example.startapp.domain.model.ExpenseCategory
 import com.example.startapp.domain.model.GroupedTransactionState
 import com.example.startapp.domain.model.buildGroupedTransactionState
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -38,6 +42,9 @@ class CounterViewModel(private val repository: CounterDataRepository) : ViewMode
     private val _daysToDisplay = MutableStateFlow(30) // Default value, will be updated from repository
     val daysToDisplay = _daysToDisplay.asStateFlow()
 
+    private val _dateRangeFilter = MutableStateFlow(defaultDateRange())
+    val dateRangeFilter = _dateRangeFilter.asStateFlow()
+
     private val _expenseCustomCategories = MutableStateFlow<List<String>>(emptyList())
     val expenseCustomCategories = _expenseCustomCategories.asStateFlow()
 
@@ -55,10 +62,7 @@ class CounterViewModel(private val repository: CounterDataRepository) : ViewMode
 
         viewModelScope.launch {
             repository.normalizeStoredTransactions()
-            repository.transactions.collect {
-                _transactions.value = it
-                _groupedTransactions.value = buildGroupedTransactionState(it)
-            }
+            repository.transactions.collect { _transactions.value = it }
         }
 
         viewModelScope.launch {
@@ -69,6 +73,16 @@ class CounterViewModel(private val repository: CounterDataRepository) : ViewMode
 
         viewModelScope.launch {
             repository.daysToDisplay.collect { _daysToDisplay.value = it }
+        }
+
+        viewModelScope.launch {
+            repository.dateRangeFilter.collect { _dateRangeFilter.value = it }
+        }
+
+        viewModelScope.launch {
+            combine(repository.transactions, repository.dateRangeFilter) { transactions, range ->
+                buildGroupedTransactionState(filterTransactionsByDateRange(transactions, range))
+            }.collect { _groupedTransactions.value = it }
         }
 
         viewModelScope.launch {
@@ -83,6 +97,18 @@ class CounterViewModel(private val repository: CounterDataRepository) : ViewMode
     fun updateDaysToDisplay(days: Int) {
         viewModelScope.launch {
             repository.updateDaysToDisplay(days)
+        }
+    }
+
+    fun updateDateRangeFilter(startEpochMs: Long, endEpochMs: Long) {
+        viewModelScope.launch {
+            repository.updateDateRangeFilter(startEpochMs, endEpochMs)
+        }
+    }
+
+    fun resetDateRangeFilter() {
+        viewModelScope.launch {
+            repository.resetDateRangeFilter()
         }
     }
 
