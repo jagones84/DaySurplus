@@ -67,7 +67,11 @@ fun ChartScreen(viewModel: ChartViewModel) {
             modifier = Modifier.padding(bottom = 16.dp)
         )
 
-        // TimeFrame Selector
+        Text(
+            text = "Chart Aggregation",
+            style = MaterialTheme.typography.titleSmall,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -89,7 +93,7 @@ fun ChartScreen(viewModel: ChartViewModel) {
             val topCategory = stats.categoryExpenses.firstOrNull()
 
             Text(
-                text = "Saving Ratio (Surplus/Total Income To Date): %.2f%%".format(stats.savingsRatio * 100),
+                text = "Saving Ratio (Selected Period): %.2f%%".format(stats.savingsRatio * 100),
                 modifier = Modifier.padding(vertical = 4.dp)
             )
             Text(
