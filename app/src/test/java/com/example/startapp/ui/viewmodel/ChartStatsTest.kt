@@ -13,6 +13,42 @@ import org.junit.Test
 class ChartStatsTest {
 
     @Test
+    fun calculateChartStatsForPeriod_excludesPreRangeSurplusOffsetFromSavingRatio() {
+        val beforeRangeDate = 1_717_920_000_000L
+        val firstInRangeDate = 1_718_006_400_000L
+        val lastInRangeDate = 1_718_179_200_000L
+
+        val stats = calculateChartStatsForPeriod(
+            snapshots = listOf(
+                DailySnapshot(date = beforeRangeDate, amount = 500.0),
+                DailySnapshot(date = firstInRangeDate, amount = 550.0),
+                DailySnapshot(date = lastInRangeDate, amount = 580.0)
+            ),
+            transactions = listOf(
+                Transaction(
+                    amount = -20.0,
+                    date = 1_718_092_800_000L,
+                    description = "spesa",
+                    category = ExpenseCategory.FOOD.label
+                )
+            ),
+            range = createNormalizedDateRange(
+                startEpochMs = firstInRangeDate,
+                endEpochMs = lastInRangeDate
+            ),
+            timeFrame = TimeFrame.Day,
+            dailyIncrease = 0.0
+        )
+
+        assertEquals(20.0, stats.totalExpenses, 0.0001)
+        assertEquals(100.0, stats.totalIncome, 0.0001)
+        assertEquals(80.0 / 100.0, stats.savingsRatio, 0.0001)
+        assertEquals(2, stats.points.size)
+        assertEquals(50.0, stats.points.first().income, 0.0001)
+        assertEquals(50.0, stats.points.last().income, 0.0001)
+    }
+
+    @Test
     fun calculateChartStatsForPeriod_filtersAllAnalyticsToSelectedPeriod() {
         val oldDate = 1_717_661_200_000L
         val inRangeDate = 1_718_006_400_000L
@@ -47,8 +83,8 @@ class ChartStatsTest {
         )
 
         assertEquals(10.0, stats.totalExpenses, 0.0001)
-        assertEquals(40.0, stats.totalIncome, 0.0001)
-        assertEquals(30.0 / 40.0, stats.savingsRatio, 0.0001)
+        assertEquals(120.0, stats.totalIncome, 0.0001)
+        assertEquals(110.0 / 120.0, stats.savingsRatio, 0.0001)
         assertEquals(1, stats.categoryExpenses.size)
         assertEquals("Health", stats.categoryExpenses.single().category)
         assertEquals(10.0, stats.categoryExpenses.single().total, 0.0001)

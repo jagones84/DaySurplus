@@ -54,6 +54,35 @@ internal fun calculatePeriodTotals(
     )
 }
 
+internal fun calculateNetSurplusForRange(
+    snapshots: List<DailySnapshot>,
+    range: DateRangeFilter
+): Double {
+    val sortedSnapshots = snapshots.sortedBy { it.date }
+    val endingSnapshot = sortedSnapshots.lastOrNull { it.date in range.startEpochMs..range.endEpochMs }
+        ?: return 0.0
+    val baselineAmount = sortedSnapshots
+        .lastOrNull { it.date < range.startEpochMs }
+        ?.amount
+        ?: 0.0
+    return endingSnapshot.amount - baselineAmount
+}
+
+internal fun calculatePeriodTotalsForRange(
+    snapshots: List<DailySnapshot>,
+    transactions: List<Transaction>,
+    range: DateRangeFilter
+): PeriodTotals {
+    val totalExpenses = transactions
+        .filter { it.amount < 0 }
+        .sumOf { -it.amount }
+    val netSurplus = calculateNetSurplusForRange(snapshots, range)
+    return PeriodTotals(
+        totalExpenses = totalExpenses,
+        totalIncome = totalExpenses + netSurplus
+    )
+}
+
 internal fun calculateSavingRatioToDate(
     snapshots: List<DailySnapshot>,
     transactions: List<Transaction>
@@ -75,6 +104,20 @@ internal fun calculateSavingRatioToDate(
 
     val totalIncome = totalExpenses + netSurplusRaw
     val saved = netSurplusRaw.coerceAtLeast(0.0)
+    return if (totalIncome > 0.0) saved / totalIncome else 0.0
+}
+
+internal fun calculateSavingRatioForRange(
+    snapshots: List<DailySnapshot>,
+    transactions: List<Transaction>,
+    range: DateRangeFilter
+): Double {
+    val totalExpenses = transactions
+        .filter { it.amount < 0 }
+        .sumOf { -it.amount }
+    val netSurplus = calculateNetSurplusForRange(snapshots, range)
+    val totalIncome = totalExpenses + netSurplus
+    val saved = netSurplus.coerceAtLeast(0.0)
     return if (totalIncome > 0.0) saved / totalIncome else 0.0
 }
 
@@ -173,6 +216,7 @@ internal fun calculateChartStatsForPeriod(
     timeFrame: TimeFrame,
     dailyIncrease: Double
 ): ChartStats {
+    val sortedSnapshots = snapshots.sortedBy { it.date }
     val relevantSnapshots = filterSnapshotsByDateRange(snapshots, range)
     val relevantTransactions = filterTransactionsByDateRange(transactions, range)
     val coveredDays = calculateCoveredDays(range)
@@ -203,6 +247,15 @@ internal fun calculateChartStatsForPeriod(
 
     val points = mutableListOf<ChartPoint>()
     val surplusValues = aggregatedSnapshots.map { it.amount }
+    val baselineSnapshot = sortedSnapshots.lastOrNull { it.date < range.startEpochMs }
+    val firstSnapshot = aggregatedSnapshots.first()
+    val firstPeriodTransactions = relevantTransactions.filter { it.date <= firstSnapshot.date }
+    val firstExpenses = firstPeriodTransactions
+        .filter { it.amount < 0 }
+        .sumOf { -it.amount }
+    val firstDelta = firstSnapshot.amount - (baselineSnapshot?.amount ?: 0.0)
+    val firstIncome = firstDelta + firstExpenses
+    points.add(ChartPoint(firstSnapshot.date, firstSnapshot.amount, firstExpenses, firstIncome))
 
     if (aggregatedSnapshots.size >= 2) {
         for (i in 1 until aggregatedSnapshots.size) {
@@ -214,21 +267,22 @@ internal fun calculateChartStatsForPeriod(
             val inc = delta + exp
             points.add(ChartPoint(curr.date, curr.amount, exp, inc))
         }
-    } else {
-        points.add(ChartPoint(aggregatedSnapshots[0].date, aggregatedSnapshots[0].amount, 0.0, 0.0))
     }
 
-    val periodTotals = calculatePeriodTotals(
-        snapshots = relevantSnapshots,
+    val periodTotals = calculatePeriodTotalsForRange(
+        snapshots = snapshots,
         transactions = relevantTransactions
+        ,
+        range = range
     )
     val categoryExpenses = buildExpenseCategorySlices(relevantTransactions, coveredDays)
     val categoryIncome = buildIncomeCategorySlices(relevantTransactions, coveredDays, dailyIncrease)
     val topExpenseDescriptions = buildTopExpenseDescriptions(relevantTransactions)
     val topExpenseDays = buildTopExpenseDays(relevantTransactions)
-    val savingRatio = calculateSavingRatioToDate(
-        snapshots = relevantSnapshots,
-        transactions = relevantTransactions
+    val savingRatio = calculateSavingRatioForRange(
+        snapshots = snapshots,
+        transactions = relevantTransactions,
+        range = range
     )
 
     return ChartStats(
