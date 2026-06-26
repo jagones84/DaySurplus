@@ -7,9 +7,13 @@ import androidx.lifecycle.viewModelScope
 import com.example.startapp.data.CounterDataRepository
 import com.example.startapp.data.model.DailySnapshot
 import com.example.startapp.data.model.Transaction
+import com.example.startapp.domain.calculateCoveredDays
+import com.example.startapp.domain.filterSnapshotsByDateRange
+import com.example.startapp.domain.filterTransactionsByDateRange
 import com.example.startapp.domain.model.CategorySlice
 import com.example.startapp.domain.model.ChartPoint
 import com.example.startapp.domain.model.ChartStats
+import com.example.startapp.domain.model.DateRangeFilter
 import com.example.startapp.domain.model.RankedMetric
 import com.example.startapp.domain.model.TimeFrame
 import com.example.startapp.utils.calculateStdDev
@@ -24,12 +28,6 @@ import java.util.Locale
 internal data class PeriodTotals(
     val totalExpenses: Double,
     val totalIncome: Double
-)
-
-internal data class FilteredAnalyticsData(
-    val snapshots: List<DailySnapshot>,
-    val transactions: List<Transaction>,
-    val coveredDays: Int
 )
 
 private const val AVERAGE_DAYS_PER_MONTH = 30.4375
@@ -82,21 +80,6 @@ internal fun calculateSavingRatioToDate(
 
 internal fun calculateMonthlyAverage(total: Double, coveredDays: Int): Double {
     return total / maxOf(coveredDays, 1) * AVERAGE_DAYS_PER_MONTH
-}
-
-internal fun filterAnalyticsData(
-    snapshots: List<DailySnapshot>,
-    transactions: List<Transaction>,
-    daysToDisplay: Int,
-    now: Long = System.currentTimeMillis()
-): FilteredAnalyticsData {
-    val coveredDays = maxOf(daysToDisplay, 1)
-    val minTimestamp = now - (coveredDays.toLong() * 24 * 60 * 60 * 1000)
-    return FilteredAnalyticsData(
-        snapshots = snapshots.filter { it.date >= minTimestamp }.sortedBy { it.date },
-        transactions = transactions.filter { it.date >= minTimestamp },
-        coveredDays = coveredDays
-    )
 }
 
 internal fun buildExpenseCategorySlices(
@@ -186,19 +169,13 @@ internal fun buildTopExpenseDays(transactions: List<Transaction>): List<RankedMe
 internal fun calculateChartStatsForPeriod(
     snapshots: List<DailySnapshot>,
     transactions: List<Transaction>,
-    daysToDisplay: Int,
+    range: DateRangeFilter,
     timeFrame: TimeFrame,
-    dailyIncrease: Double,
-    now: Long = System.currentTimeMillis()
+    dailyIncrease: Double
 ): ChartStats {
-    val filtered = filterAnalyticsData(
-        snapshots = snapshots,
-        transactions = transactions,
-        daysToDisplay = daysToDisplay,
-        now = now
-    )
-    val relevantSnapshots = filtered.snapshots
-    val relevantTransactions = filtered.transactions
+    val relevantSnapshots = filterSnapshotsByDateRange(snapshots, range)
+    val relevantTransactions = filterTransactionsByDateRange(transactions, range)
+    val coveredDays = calculateCoveredDays(range)
 
     if (relevantSnapshots.isEmpty()) {
         return ChartStats(
@@ -245,8 +222,8 @@ internal fun calculateChartStatsForPeriod(
         snapshots = relevantSnapshots,
         transactions = relevantTransactions
     )
-    val categoryExpenses = buildExpenseCategorySlices(relevantTransactions, filtered.coveredDays)
-    val categoryIncome = buildIncomeCategorySlices(relevantTransactions, filtered.coveredDays, dailyIncrease)
+    val categoryExpenses = buildExpenseCategorySlices(relevantTransactions, coveredDays)
+    val categoryIncome = buildIncomeCategorySlices(relevantTransactions, coveredDays, dailyIncrease)
     val topExpenseDescriptions = buildTopExpenseDescriptions(relevantTransactions)
     val topExpenseDays = buildTopExpenseDays(relevantTransactions)
     val savingRatio = calculateSavingRatioToDate(
@@ -296,11 +273,11 @@ class ChartViewModel(private val repository: CounterDataRepository) : ViewModel(
             combine(
                 repository.dailySnapshots,
                 repository.transactions,
-                repository.daysToDisplay,
+                repository.dateRangeFilter,
                 repository.dailyIncrease,
                 _timeFrame
-            ) { snapshots, transactions, daysToDisplay, dailyIncrease, selectedTimeFrame ->
-                calculateChartData(snapshots, transactions, daysToDisplay, selectedTimeFrame, dailyIncrease)
+            ) { snapshots, transactions, range, dailyIncrease, selectedTimeFrame ->
+                calculateChartData(snapshots, transactions, range, selectedTimeFrame, dailyIncrease)
             }.collect { stats ->
                 _chartStats.value = stats
             }
@@ -314,7 +291,7 @@ class ChartViewModel(private val repository: CounterDataRepository) : ViewModel(
     private fun calculateChartData(
         snapshots: List<DailySnapshot>,
         transactions: List<Transaction>,
-        daysToDisplay: Int,
+        range: DateRangeFilter,
         timeFrame: TimeFrame,
         dailyIncrease: Double
     ): ChartStats {
@@ -322,7 +299,7 @@ class ChartViewModel(private val repository: CounterDataRepository) : ViewModel(
         return calculateChartStatsForPeriod(
             snapshots = snapshots,
             transactions = transactions,
-            daysToDisplay = daysToDisplay,
+            range = range,
             timeFrame = timeFrame,
             dailyIncrease = dailyIncrease
         )

@@ -2,6 +2,8 @@ package com.example.startapp.ui.viewmodel
 
 import com.example.startapp.data.model.DailySnapshot
 import com.example.startapp.data.model.Transaction
+import com.example.startapp.domain.createNormalizedDateRange
+import com.example.startapp.domain.model.DateRangeFilter
 import com.example.startapp.domain.model.ExpenseCategory
 import com.example.startapp.domain.model.TimeFrame
 import org.junit.Assert.assertEquals
@@ -12,10 +14,9 @@ class ChartStatsTest {
 
     @Test
     fun calculateChartStatsForPeriod_filtersAllAnalyticsToSelectedPeriod() {
-        val now = 1_700_000_000_000L
-        val oldDate = now - (40L * 24 * 60 * 60 * 1000)
-        val inRangeDate = now - (5L * 24 * 60 * 60 * 1000)
-        val laterInRangeDate = now - (2L * 24 * 60 * 60 * 1000)
+        val oldDate = 1_717_661_200_000L
+        val inRangeDate = 1_718_006_400_000L
+        val laterInRangeDate = 1_718_179_200_000L
 
         val stats = calculateChartStatsForPeriod(
             snapshots = listOf(
@@ -32,15 +33,17 @@ class ChartStatsTest {
                 ),
                 Transaction(
                     amount = -10.0,
-                    date = now - (3L * 24 * 60 * 60 * 1000),
+                    date = 1_718_092_800_000L,
                     description = "farmacia",
                     category = ExpenseCategory.HEALTH.label
                 )
             ),
-            daysToDisplay = 30,
+            range = createNormalizedDateRange(
+                startEpochMs = inRangeDate,
+                endEpochMs = laterInRangeDate
+            ),
             timeFrame = TimeFrame.Day,
-            dailyIncrease = 0.0,
-            now = now
+            dailyIncrease = 0.0
         )
 
         assertEquals(10.0, stats.totalExpenses, 0.0001)
@@ -55,24 +58,24 @@ class ChartStatsTest {
 
     @Test
     fun calculateChartStatsForPeriod_returnsEmptyAnalyticsWhenPeriodHasNoSnapshots() {
-        val now = 1_700_000_000_000L
-
         val stats = calculateChartStatsForPeriod(
             snapshots = listOf(
-                DailySnapshot(date = now - (50L * 24 * 60 * 60 * 1000), amount = 20.0)
+                DailySnapshot(date = 1_717_661_200_000L, amount = 20.0)
             ),
             transactions = listOf(
                 Transaction(
                     amount = -25.0,
-                    date = now - (40L * 24 * 60 * 60 * 1000),
+                    date = 1_717_747_600_000L,
                     description = "spesa",
                     category = ExpenseCategory.FOOD.label
                 )
             ),
-            daysToDisplay = 7,
+            range = DateRangeFilter(
+                startEpochMs = 1_718_006_400_000L,
+                endEpochMs = 1_718_179_199_999L
+            ),
             timeFrame = TimeFrame.Day,
-            dailyIncrease = 0.0,
-            now = now
+            dailyIncrease = 0.0
         )
 
         assertTrue(stats.points.isEmpty())
