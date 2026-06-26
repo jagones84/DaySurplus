@@ -1,5 +1,7 @@
 package com.example.startapp.ui.screen
 
+import android.app.DatePickerDialog
+import android.content.Context
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
@@ -50,6 +52,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.startapp.data.model.Transaction
+import com.example.startapp.domain.filterTransactionsByDateRange
 import com.example.startapp.domain.model.CategoryCatalog
 import com.example.startapp.domain.model.CategoryType
 import com.example.startapp.domain.model.ExpenseCategory
@@ -59,6 +62,7 @@ import com.example.startapp.ui.viewmodel.CounterViewModel
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
@@ -72,7 +76,7 @@ fun CounterScreen(viewModel: CounterViewModel) {
     val totalAmount by viewModel.totalAmount.collectAsState()
     val dailyIncrease by viewModel.dailyIncrease.collectAsState()
     val transactions by viewModel.transactions.collectAsState()
-    val daysToDisplay by viewModel.daysToDisplay.collectAsState()
+    val dateRangeFilter by viewModel.dateRangeFilter.collectAsState()
     val expenseCustomCategories by viewModel.expenseCustomCategories.collectAsState()
     val incomeCustomCategories by viewModel.incomeCustomCategories.collectAsState()
 
@@ -80,7 +84,6 @@ fun CounterScreen(viewModel: CounterViewModel) {
     var description by remember { mutableStateOf("") }
     var dailyIncreaseAmount by remember { mutableStateOf(dailyIncrease.toString()) }
     var showResetDialog by remember { mutableStateOf(false) }
-    var daysInput by remember { mutableStateOf(daysToDisplay.toString()) }
     var selectedIncomeCategory by remember { mutableStateOf("Salary") }
     var selectedExpenseCategory by remember { mutableStateOf(ExpenseCategory.FOOD.label) }
     var incomeCategoryMenuExpanded by remember { mutableStateOf(false) }
@@ -132,19 +135,15 @@ fun CounterScreen(viewModel: CounterViewModel) {
     }
 
     val dateFormat = remember { SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()) }
+    val filterDateFormat = remember { SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()) }
     val expandedCategories = remember { mutableStateMapOf<String, Boolean>() }
-
-    LaunchedEffect(daysToDisplay) {
-        daysInput = daysToDisplay.toString()
-    }
 
     LaunchedEffect(dailyIncrease) {
         dailyIncreaseAmount = if (dailyIncrease > 0) dailyIncrease.toString() else ""
     }
 
-    val periodTransactions = remember(transactions, daysToDisplay) {
-        val daysAgo = System.currentTimeMillis() - (daysToDisplay.toLong() * 24 * 60 * 60 * 1000)
-        transactions.filter { it.date >= daysAgo }.reversed()
+    val periodTransactions = remember(transactions, dateRangeFilter) {
+        filterTransactionsByDateRange(transactions, dateRangeFilter).reversed()
     }
     val historyCategoryOptions = remember(
         historyScope,
@@ -594,32 +593,69 @@ fun CounterScreen(viewModel: CounterViewModel) {
         }
 
         item {
-            Row(
+            Card(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
             ) {
-                Text(
-                    text = "History",
-                    style = MaterialTheme.typography.titleMedium,
-                    textAlign = TextAlign.Start
-                )
-
-                OutlinedTextField(
-                    value = daysInput,
-                    onValueChange = {
-                        daysInput = it
-                        val days = it.toIntOrNull()
-                        if (days != null) {
-                            viewModel.updateDaysToDisplay(days)
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text(
+                        text = "History",
+                        style = MaterialTheme.typography.titleMedium,
+                        textAlign = TextAlign.Start
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Analysis Range",
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                showDatePicker(
+                                    context = context,
+                                    initialEpochMs = dateRangeFilter.startEpochMs
+                                ) { selectedDate ->
+                                    viewModel.updateDateRangeFilter(
+                                        startEpochMs = selectedDate,
+                                        endEpochMs = dateRangeFilter.endEpochMs
+                                    )
+                                }
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Da: ${filterDateFormat.format(Date(dateRangeFilter.startEpochMs))}")
                         }
-                    },
-                    label = { Text("Days") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.width(100.dp)
-                )
+                        Button(
+                            onClick = {
+                                showDatePicker(
+                                    context = context,
+                                    initialEpochMs = dateRangeFilter.endEpochMs
+                                ) { selectedDate ->
+                                    viewModel.updateDateRangeFilter(
+                                        startEpochMs = dateRangeFilter.startEpochMs,
+                                        endEpochMs = selectedDate
+                                    )
+                                }
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("A: ${filterDateFormat.format(Date(dateRangeFilter.endEpochMs))}")
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    TextButton(
+                        onClick = { viewModel.resetDateRangeFilter() },
+                        modifier = Modifier.align(Alignment.End)
+                    ) {
+                        Text("Reset filtro")
+                    }
+                }
             }
         }
 
@@ -827,6 +863,32 @@ fun CounterScreen(viewModel: CounterViewModel) {
             LegalNotice()
         }
     }
+}
+
+private fun showDatePicker(
+    context: Context,
+    initialEpochMs: Long,
+    onDateSelected: (Long) -> Unit
+) {
+    val calendar = Calendar.getInstance().apply { timeInMillis = initialEpochMs }
+    DatePickerDialog(
+        context,
+        { _, year, month, dayOfMonth ->
+            val selectedCalendar = Calendar.getInstance().apply {
+                set(Calendar.YEAR, year)
+                set(Calendar.MONTH, month)
+                set(Calendar.DAY_OF_MONTH, dayOfMonth)
+                set(Calendar.HOUR_OF_DAY, 12)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }
+            onDateSelected(selectedCalendar.timeInMillis)
+        },
+        calendar.get(Calendar.YEAR),
+        calendar.get(Calendar.MONTH),
+        calendar.get(Calendar.DAY_OF_MONTH)
+    ).show()
 }
 
 @Composable
