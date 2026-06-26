@@ -263,11 +263,6 @@ class ChartViewModel(private val repository: CounterDataRepository) : ViewModel(
     private val _chartStats = MutableStateFlow<ChartStats?>(null)
     val chartStats = _chartStats.asStateFlow()
 
-    // We still need to know daysToDisplay to filter the initial dataset, 
-    // or we can show all available history up to max 900 days.
-    // The user said "never forget that ponit sup to teh max periodo box number expressed by user".
-    // ChartScreen currently uses 'daysToDisplay'. Let's keep observing it.
-    
     init {
         viewModelScope.launch {
             combine(

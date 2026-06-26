@@ -67,7 +67,11 @@ fun ChartScreen(viewModel: ChartViewModel) {
             modifier = Modifier.padding(bottom = 16.dp)
         )
 
-        // TimeFrame Selector
+        Text(
+            text = "Chart Aggregation",
+            style = MaterialTheme.typography.titleSmall,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
         Row(
             modifier = Modifier
                 .fillMaxWidth()
