@@ -5,12 +5,16 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.example.startapp.data.model.DailySnapshot
 import com.example.startapp.data.model.Transaction
+import com.example.startapp.domain.createNormalizedDateRange
+import com.example.startapp.domain.defaultDateRange
 import com.example.startapp.domain.model.CategoryCatalog
+import com.example.startapp.domain.model.DateRangeFilter
 import com.example.startapp.domain.model.CategoryType
 import com.example.startapp.domain.model.ExpenseCategory
 import com.google.gson.Gson
@@ -75,6 +79,8 @@ class CounterDataRepository(private val dataStore: DataStore<Preferences>) {
     private val transactionsKey = stringPreferencesKey("transactions")
     private val dailySnapshotsKey = stringPreferencesKey("daily_snapshots")
     private val daysToDisplayKey = intPreferencesKey("days_to_display")
+    private val filterStartDateKey = longPreferencesKey("filter_start_date")
+    private val filterEndDateKey = longPreferencesKey("filter_end_date")
     private val maxHistoryDaysKey = intPreferencesKey("max_history_days")
     private val expenseCustomCategoriesKey = stringPreferencesKey("expense_custom_categories")
     private val incomeCustomCategoriesKey = stringPreferencesKey("income_custom_categories")
@@ -114,6 +120,14 @@ class CounterDataRepository(private val dataStore: DataStore<Preferences>) {
     val daysToDisplay: Flow<Int> = dataStore.data
         .map { preferences ->
             preferences[daysToDisplayKey] ?: 30 // Default to 30 days
+        }
+
+    val dateRangeFilter: Flow<DateRangeFilter> = dataStore.data
+        .map { preferences ->
+            val default = defaultDateRange()
+            val start = preferences[filterStartDateKey] ?: default.startEpochMs
+            val end = preferences[filterEndDateKey] ?: default.endEpochMs
+            createNormalizedDateRange(start, end)
         }
     
     // Flow to emit the max history days to keep
@@ -251,6 +265,22 @@ class CounterDataRepository(private val dataStore: DataStore<Preferences>) {
     suspend fun updateDaysToDisplay(days: Int) {
         dataStore.edit {
             it[daysToDisplayKey] = days
+        }
+    }
+
+    suspend fun updateDateRangeFilter(startEpochMs: Long, endEpochMs: Long) {
+        val normalized = createNormalizedDateRange(startEpochMs, endEpochMs)
+        dataStore.edit {
+            it[filterStartDateKey] = normalized.startEpochMs
+            it[filterEndDateKey] = normalized.endEpochMs
+        }
+    }
+
+    suspend fun resetDateRangeFilter(now: Long = System.currentTimeMillis()) {
+        val default = defaultDateRange(now)
+        dataStore.edit {
+            it[filterStartDateKey] = default.startEpochMs
+            it[filterEndDateKey] = default.endEpochMs
         }
     }
 
