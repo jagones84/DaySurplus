@@ -1,5 +1,7 @@
 package com.example.startapp.ui.screen
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -36,12 +38,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -52,6 +56,7 @@ import com.example.startapp.domain.model.ExpenseCategory
 import com.example.startapp.domain.model.TransactionGroup
 import com.example.startapp.domain.model.buildGroupedTransactionState
 import com.example.startapp.ui.viewmodel.CounterViewModel
+import kotlinx.coroutines.launch
 import kotlin.math.abs
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -60,6 +65,9 @@ import java.util.Locale
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CounterScreen(viewModel: CounterViewModel) {
+
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
 
     val totalAmount by viewModel.totalAmount.collectAsState()
     val dailyIncrease by viewModel.dailyIncrease.collectAsState()
@@ -90,6 +98,38 @@ fun CounterScreen(viewModel: CounterViewModel) {
     var historyScopeMenuExpanded by remember { mutableStateOf(false) }
     var historyCategoryFilter by remember { mutableStateOf("All") }
     var historyCategoryMenuExpanded by remember { mutableStateOf(false) }
+    var backupResultMessage by remember { mutableStateOf<String?>(null) }
+
+    val exportBackupLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) {
+            coroutineScope.launch {
+                val json = viewModel.exportBackupJson()
+                context.contentResolver.openOutputStream(uri)?.use { output ->
+                    output.write(json.toByteArray())
+                    output.flush()
+                }
+                backupResultMessage = "Backup exported."
+            }
+        }
+    }
+
+    val importBackupLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            coroutineScope.launch {
+                val json = context.contentResolver.openInputStream(uri)
+                    ?.bufferedReader()
+                    ?.use { it.readText() }
+                    .orEmpty()
+
+                val ok = viewModel.importBackupJson(json)
+                backupResultMessage = if (ok) "Backup imported." else "Backup import failed."
+            }
+        }
+    }
 
     val dateFormat = remember { SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()) }
     val expandedCategories = remember { mutableStateMapOf<String, Boolean>() }
@@ -345,6 +385,19 @@ fun CounterScreen(viewModel: CounterViewModel) {
                     }
                 ) {
                     Text("Cancel")
+                }
+            }
+        )
+    }
+
+    if (backupResultMessage != null) {
+        AlertDialog(
+            onDismissRequest = { backupResultMessage = null },
+            title = { Text("Backup") },
+            text = { Text(backupResultMessage!!) },
+            confirmButton = {
+                TextButton(onClick = { backupResultMessage = null }) {
+                    Text("OK")
                 }
             }
         )
@@ -650,6 +703,30 @@ fun CounterScreen(viewModel: CounterViewModel) {
                             }
                         }
                     }
+                }
+            }
+        }
+
+        item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                Button(
+                    onClick = {
+                        exportBackupLauncher.launch("day-surp-backup.json")
+                    }
+                ) {
+                    Text("Export Backup")
+                }
+                Button(
+                    onClick = {
+                        importBackupLauncher.launch(arrayOf("application/json"))
+                    }
+                ) {
+                    Text("Import Backup")
                 }
             }
         }
