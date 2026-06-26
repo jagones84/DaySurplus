@@ -120,6 +120,17 @@ class CounterViewModel(private val repository: CounterDataRepository) : ViewMode
         }
     }
 
+    fun updateTransaction(id: String, newAmount: Double, newDescription: String, newCategory: String) {
+        viewModelScope.launch {
+            repository.updateTransaction(
+                id = id,
+                newAmount = newAmount,
+                newDescription = newDescription,
+                newCategory = newCategory
+            )
+        }
+    }
+
     fun addCustomCategory(type: CategoryType, name: String, onCreated: (String) -> Unit = {}) {
         viewModelScope.launch {
             repository.addCustomCategory(type, name)?.let(onCreated)

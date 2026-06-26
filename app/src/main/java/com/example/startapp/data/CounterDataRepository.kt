@@ -197,6 +197,37 @@ class CounterDataRepository(private val dataStore: DataStore<Preferences>) {
         }
     }
 
+    suspend fun updateTransaction(
+        id: String,
+        newAmount: Double,
+        newDescription: String,
+        newCategory: String
+    ) {
+        dataStore.edit { preferences ->
+            val json = preferences[transactionsKey] ?: "[]"
+            val type = object : TypeToken<MutableList<Transaction>>() {}.type
+            val currentList: MutableList<Transaction> = gson.fromJson(json, type) ?: mutableListOf()
+
+            val index = currentList.indexOfFirst { it.id == id }
+            if (index < 0) {
+                return@edit
+            }
+
+            val old = currentList[index]
+            val updated = old.copy(
+                amount = newAmount,
+                description = newDescription,
+                category = newCategory
+            )
+            currentList[index] = updated
+            preferences[transactionsKey] = gson.toJson(currentList)
+
+            val currentTotal = preferences[totalAmountKey] ?: 0.0
+            val delta = newAmount - old.amount
+            preferences[totalAmountKey] = currentTotal + delta
+        }
+    }
+
     suspend fun clearTransactions() {
         dataStore.edit { preferences ->
             preferences[transactionsKey] = "[]"
