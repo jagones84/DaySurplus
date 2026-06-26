@@ -5,6 +5,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.startapp.data.CounterDataRepository
+import com.example.startapp.data.backup.BackupCodec
+import com.example.startapp.data.backup.BackupValidator
 import com.example.startapp.data.model.DailySnapshot
 import com.example.startapp.data.model.Transaction
 import com.example.startapp.domain.model.CategoryType
@@ -135,6 +137,25 @@ class CounterViewModel(private val repository: CounterDataRepository) : ViewMode
         viewModelScope.launch {
             repository.addCustomCategory(type, name)?.let(onCreated)
         }
+    }
+
+    suspend fun exportBackupJson(): String {
+        return BackupCodec.encode(repository.exportBackup())
+    }
+
+    suspend fun importBackupJson(json: String): Boolean {
+        val decoded = try {
+            BackupCodec.decode(json)
+        } catch (_: Throwable) {
+            return false
+        }
+
+        if (!BackupValidator.validate(decoded)) {
+            return false
+        }
+
+        repository.importBackup(decoded)
+        return true
     }
 
     fun updateDailyIncrease(amount: Double) {

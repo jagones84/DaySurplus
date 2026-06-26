@@ -16,6 +16,7 @@ import com.example.startapp.domain.model.ExpenseCategory
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 // Extension property to delegate DataStore creation to the context
@@ -282,5 +283,53 @@ class CounterDataRepository(private val dataStore: DataStore<Preferences>) {
             preferences[key] = gson.toJson((current + created!!).distinct().sorted())
         }
         return created
+    }
+
+    suspend fun exportBackup(): com.example.startapp.data.model.AppBackup {
+        val preferences = dataStore.data.first()
+
+        val transactionsJson = preferences[transactionsKey] ?: "[]"
+        val transactionsType = object : TypeToken<List<Transaction>>() {}.type
+        val transactions: List<Transaction> = gson.fromJson(transactionsJson, transactionsType) ?: emptyList()
+
+        val snapshotsJson = preferences[dailySnapshotsKey] ?: "[]"
+        val snapshotsType = object : TypeToken<List<DailySnapshot>>() {}.type
+        val dailySnapshots: List<DailySnapshot> = gson.fromJson(snapshotsJson, snapshotsType) ?: emptyList()
+
+        val expenseCustom = gson.fromJsonStringList(preferences[expenseCustomCategoriesKey])
+        val incomeCustom = gson.fromJsonStringList(preferences[incomeCustomCategoriesKey])
+
+        return com.example.startapp.data.model.AppBackup(
+            schemaVersion = com.example.startapp.data.backup.BackupValidator.SUPPORTED_SCHEMA_VERSION,
+            createdAtEpochMs = System.currentTimeMillis(),
+            totalAmount = preferences[totalAmountKey] ?: 0.0,
+            dailyIncrease = preferences[dailyIncreaseKey] ?: 0.0,
+            daysToDisplay = preferences[daysToDisplayKey] ?: 30,
+            maxHistoryDays = preferences[maxHistoryDaysKey] ?: 900,
+            transactions = transactions,
+            dailySnapshots = dailySnapshots,
+            expenseCustomCategories = expenseCustom,
+            incomeCustomCategories = incomeCustom
+        )
+    }
+
+    suspend fun importBackup(backup: com.example.startapp.data.model.AppBackup) {
+        val now = System.currentTimeMillis()
+        val retentionLimit = now - (backup.maxHistoryDays.toLong() * 24 * 60 * 60 * 1000)
+        val filteredTransactions = backup.transactions.filter { it.date >= retentionLimit }
+        val filteredSnapshots = backup.dailySnapshots.filter { it.date >= retentionLimit }
+
+        dataStore.edit { preferences ->
+            preferences[totalAmountKey] = backup.totalAmount
+            preferences[dailyIncreaseKey] = backup.dailyIncrease
+            preferences[daysToDisplayKey] = backup.daysToDisplay
+            preferences[maxHistoryDaysKey] = backup.maxHistoryDays
+            preferences[transactionsKey] = gson.toJson(filteredTransactions)
+            preferences[dailySnapshotsKey] = gson.toJson(filteredSnapshots)
+            preferences[expenseCustomCategoriesKey] = gson.toJson(backup.expenseCustomCategories.distinct().sorted())
+            preferences[incomeCustomCategoriesKey] = gson.toJson(backup.incomeCustomCategories.distinct().sorted())
+        }
+
+        normalizeStoredTransactions()
     }
 }
