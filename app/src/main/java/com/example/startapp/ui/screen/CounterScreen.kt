@@ -85,6 +85,11 @@ fun CounterScreen(viewModel: CounterViewModel) {
     var editDescription by remember { mutableStateOf("") }
     var editSelectedCategory by remember { mutableStateOf("") }
     var editCategoryMenuExpanded by remember { mutableStateOf(false) }
+    var historySearchQuery by remember { mutableStateOf("") }
+    var historyScope by remember { mutableStateOf("All") }
+    var historyScopeMenuExpanded by remember { mutableStateOf(false) }
+    var historyCategoryFilter by remember { mutableStateOf("All") }
+    var historyCategoryMenuExpanded by remember { mutableStateOf(false) }
 
     val dateFormat = remember { SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()) }
     val expandedCategories = remember { mutableStateMapOf<String, Boolean>() }
@@ -97,10 +102,63 @@ fun CounterScreen(viewModel: CounterViewModel) {
         dailyIncreaseAmount = if (dailyIncrease > 0) dailyIncrease.toString() else ""
     }
 
-    val filteredTransactions = remember(transactions, daysToDisplay) {
+    val periodTransactions = remember(transactions, daysToDisplay) {
         val daysAgo = System.currentTimeMillis() - (daysToDisplay.toLong() * 24 * 60 * 60 * 1000)
         transactions.filter { it.date >= daysAgo }.reversed()
     }
+    val historyCategoryOptions = remember(
+        historyScope,
+        expenseCustomCategories,
+        incomeCustomCategories
+    ) {
+        val expense = CategoryCatalog.builtInCategories(CategoryType.EXPENSE) + expenseCustomCategories
+        val income = CategoryCatalog.builtInCategories(CategoryType.INCOME) + incomeCustomCategories
+        val scoped = when (historyScope) {
+            "Income" -> income
+            "Expense" -> expense
+            else -> expense + income
+        }
+        listOf("All") + scoped.distinct().sorted()
+    }
+    LaunchedEffect(historyCategoryOptions) {
+        if (historyCategoryFilter !in historyCategoryOptions) {
+            historyCategoryFilter = "All"
+        }
+    }
+
+    val filteredTransactions = remember(
+        periodTransactions,
+        historySearchQuery,
+        historyScope,
+        historyCategoryFilter
+    ) {
+        val query = historySearchQuery.trim().lowercase()
+        periodTransactions
+            .asSequence()
+            .filter { transaction ->
+                when (historyScope) {
+                    "Income" -> transaction.amount >= 0
+                    "Expense" -> transaction.amount < 0
+                    else -> true
+                }
+            }
+            .filter { transaction ->
+                if (historyCategoryFilter == "All") {
+                    true
+                } else {
+                    transaction.category == historyCategoryFilter
+                }
+            }
+            .filter { transaction ->
+                if (query.isBlank()) {
+                    true
+                } else {
+                    transaction.description.lowercase().contains(query)
+                }
+            }
+            .toList()
+    }
+
     val groupedFilteredTransactions = remember(filteredTransactions) {
         buildGroupedTransactionState(filteredTransactions)
     }
@@ -512,6 +570,90 @@ fun CounterScreen(viewModel: CounterViewModel) {
             }
         }
 
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    OutlinedTextField(
+                        value = historySearchQuery,
+                        onValueChange = { historySearchQuery = it },
+                        label = { Text("Search") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    ExposedDropdownMenuBox(
+                        expanded = historyScopeMenuExpanded,
+                        onExpandedChange = { historyScopeMenuExpanded = !historyScopeMenuExpanded }
+                    ) {
+                        OutlinedTextField(
+                            value = historyScope,
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Scope") },
+                            trailingIcon = {
+                                ExposedDropdownMenuDefaults.TrailingIcon(expanded = historyScopeMenuExpanded)
+                            },
+                            modifier = Modifier
+                                .menuAnchor()
+                                .fillMaxWidth()
+                        )
+                        DropdownMenu(
+                            expanded = historyScopeMenuExpanded,
+                            onDismissRequest = { historyScopeMenuExpanded = false }
+                        ) {
+                            listOf("All", "Income", "Expense").forEach { scope ->
+                                DropdownMenuItem(
+                                    text = { Text(scope) },
+                                    onClick = {
+                                        historyScope = scope
+                                        historyScopeMenuExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    ExposedDropdownMenuBox(
+                        expanded = historyCategoryMenuExpanded,
+                        onExpandedChange = { historyCategoryMenuExpanded = !historyCategoryMenuExpanded }
+                    ) {
+                        OutlinedTextField(
+                            value = historyCategoryFilter,
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Category") },
+                            trailingIcon = {
+                                ExposedDropdownMenuDefaults.TrailingIcon(expanded = historyCategoryMenuExpanded)
+                            },
+                            modifier = Modifier
+                                .menuAnchor()
+                                .fillMaxWidth()
+                        )
+                        DropdownMenu(
+                            expanded = historyCategoryMenuExpanded,
+                            onDismissRequest = { historyCategoryMenuExpanded = false }
+                        ) {
+                            historyCategoryOptions.forEach { category ->
+                                DropdownMenuItem(
+                                    text = { Text(category) },
+                                    onClick = {
+                                        historyCategoryFilter = category
+                                        historyCategoryMenuExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         if (groupedFilteredTransactions.incomeGroups.isNotEmpty()) {
             item {
                 Text(
@@ -578,10 +720,18 @@ fun CounterScreen(viewModel: CounterViewModel) {
             )
         }
 
-        if (filteredTransactions.isEmpty()) {
+        if (periodTransactions.isEmpty()) {
             item {
                 Text(
                     text = "No transactions in the selected period.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        } else if (filteredTransactions.isEmpty()) {
+            item {
+                Text(
+                    text = "No transactions match the current filters.",
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.fillMaxWidth()
                 )
