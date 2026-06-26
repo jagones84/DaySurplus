@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -51,6 +52,7 @@ import com.example.startapp.domain.model.ExpenseCategory
 import com.example.startapp.domain.model.TransactionGroup
 import com.example.startapp.domain.model.buildGroupedTransactionState
 import com.example.startapp.ui.viewmodel.CounterViewModel
+import kotlin.math.abs
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -78,6 +80,11 @@ fun CounterScreen(viewModel: CounterViewModel) {
     var showNewCategoryDialog by remember { mutableStateOf(false) }
     var pendingCategoryType by remember { mutableStateOf<CategoryType?>(null) }
     var newCategoryName by remember { mutableStateOf("") }
+    var editingTransaction by remember { mutableStateOf<Transaction?>(null) }
+    var editAmount by remember { mutableStateOf("") }
+    var editDescription by remember { mutableStateOf("") }
+    var editSelectedCategory by remember { mutableStateOf("") }
+    var editCategoryMenuExpanded by remember { mutableStateOf(false) }
 
     val dateFormat = remember { SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()) }
     val expandedCategories = remember { mutableStateMapOf<String, Boolean>() }
@@ -146,6 +153,9 @@ fun CounterScreen(viewModel: CounterViewModel) {
                                 CategoryType.EXPENSE -> selectedExpenseCategory = created
                                 CategoryType.INCOME -> selectedIncomeCategory = created
                             }
+                            if (editingTransaction != null && type == pendingCategoryType) {
+                                editSelectedCategory = created
+                            }
                             showNewCategoryDialog = false
                             pendingCategoryType = null
                             newCategoryName = ""
@@ -161,6 +171,119 @@ fun CounterScreen(viewModel: CounterViewModel) {
                         showNewCategoryDialog = false
                         pendingCategoryType = null
                         newCategoryName = ""
+                    }
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    if (editingTransaction != null) {
+        val transaction = editingTransaction!!
+        val isIncome = transaction.amount >= 0
+        val type = if (isIncome) CategoryType.INCOME else CategoryType.EXPENSE
+        val custom = if (isIncome) incomeCustomCategories else expenseCustomCategories
+
+        AlertDialog(
+            onDismissRequest = {
+                editingTransaction = null
+                editAmount = ""
+                editDescription = ""
+                editSelectedCategory = ""
+                editCategoryMenuExpanded = false
+            },
+            title = { Text("Edit Transaction") },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = editAmount,
+                        onValueChange = { editAmount = it },
+                        label = { Text("Amount") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedTextField(
+                        value = editDescription,
+                        onValueChange = { editDescription = it },
+                        label = { Text("Description") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    ExposedDropdownMenuBox(
+                        expanded = editCategoryMenuExpanded,
+                        onExpandedChange = { editCategoryMenuExpanded = !editCategoryMenuExpanded }
+                    ) {
+                        OutlinedTextField(
+                            value = editSelectedCategory,
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text(if (isIncome) "Income Category" else "Expense Category") },
+                            trailingIcon = {
+                                ExposedDropdownMenuDefaults.TrailingIcon(expanded = editCategoryMenuExpanded)
+                            },
+                            modifier = Modifier
+                                .menuAnchor()
+                                .fillMaxWidth()
+                        )
+                        DropdownMenu(
+                            expanded = editCategoryMenuExpanded,
+                            onDismissRequest = { editCategoryMenuExpanded = false }
+                        ) {
+                            CategoryCatalog.dropdownOptions(type, custom).forEach { category ->
+                                DropdownMenuItem(
+                                    text = { Text(category) },
+                                    onClick = {
+                                        if (category == CategoryCatalog.NEW_CATEGORY_OPTION) {
+                                            pendingCategoryType = type
+                                            showNewCategoryDialog = true
+                                        } else {
+                                            editSelectedCategory = category
+                                        }
+                                        editCategoryMenuExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val parsed = editAmount.toDoubleOrNull() ?: 0.0
+                        val magnitude = abs(parsed)
+                        val newAmount = if (isIncome) magnitude else -magnitude
+                        viewModel.updateTransaction(
+                            id = transaction.id,
+                            newAmount = newAmount,
+                            newDescription = editDescription,
+                            newCategory = editSelectedCategory
+                        )
+
+                        editingTransaction = null
+                        editAmount = ""
+                        editDescription = ""
+                        editSelectedCategory = ""
+                        editCategoryMenuExpanded = false
+                    }
+                ) {
+                    Text("Save")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        editingTransaction = null
+                        editAmount = ""
+                        editDescription = ""
+                        editSelectedCategory = ""
+                        editCategoryMenuExpanded = false
                     }
                 ) {
                     Text("Cancel")
@@ -410,7 +533,15 @@ fun CounterScreen(viewModel: CounterViewModel) {
                     expandedCategories[groupKey] = !isExpanded
                 },
                 dateFormat = dateFormat,
-                onDelete = viewModel::deleteTransaction
+                onDelete = viewModel::deleteTransaction,
+                onEdit = { transaction ->
+                    editingTransaction = transaction
+                    editAmount = abs(transaction.amount).toString()
+                    editDescription = transaction.description
+                    editSelectedCategory = transaction.category.ifBlank {
+                        if (transaction.amount >= 0) "Other Income" else ExpenseCategory.OTHER.label
+                    }
+                }
             )
         }
 
@@ -435,7 +566,15 @@ fun CounterScreen(viewModel: CounterViewModel) {
                     expandedCategories[groupKey] = !isExpanded
                 },
                 dateFormat = dateFormat,
-                onDelete = viewModel::deleteTransaction
+                onDelete = viewModel::deleteTransaction,
+                onEdit = { transaction ->
+                    editingTransaction = transaction
+                    editAmount = abs(transaction.amount).toString()
+                    editDescription = transaction.description
+                    editSelectedCategory = transaction.category.ifBlank {
+                        if (transaction.amount >= 0) "Other Income" else ExpenseCategory.OTHER.label
+                    }
+                }
             )
         }
 
@@ -470,7 +609,8 @@ private fun CategoryGroupCard(
     isExpanded: Boolean,
     onToggle: () -> Unit,
     dateFormat: SimpleDateFormat,
-    onDelete: (Transaction) -> Unit
+    onDelete: (Transaction) -> Unit,
+    onEdit: (Transaction) -> Unit
 ) {
     Card(
         modifier = Modifier
@@ -510,7 +650,8 @@ private fun CategoryGroupCard(
                         TransactionRow(
                             transaction = transaction,
                             dateFormat = dateFormat,
-                            onDelete = onDelete
+                            onDelete = onDelete,
+                            onEdit = onEdit
                         )
                     }
                 }
@@ -523,7 +664,8 @@ private fun CategoryGroupCard(
 private fun TransactionRow(
     transaction: Transaction,
     dateFormat: SimpleDateFormat,
-    onDelete: (Transaction) -> Unit
+    onDelete: (Transaction) -> Unit,
+    onEdit: (Transaction) -> Unit
 ) {
     Card(
         modifier = Modifier
@@ -573,11 +715,19 @@ private fun TransactionRow(
                     )
                 }
             }
-            IconButton(onClick = { onDelete(transaction) }) {
-                Icon(
-                    imageVector = Icons.Default.Delete,
-                    contentDescription = "Delete transaction"
-                )
+            Row {
+                IconButton(onClick = { onEdit(transaction) }) {
+                    Icon(
+                        imageVector = Icons.Default.Edit,
+                        contentDescription = "Edit transaction"
+                    )
+                }
+                IconButton(onClick = { onDelete(transaction) }) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = "Delete transaction"
+                    )
+                }
             }
         }
     }
