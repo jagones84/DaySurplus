@@ -11,6 +11,7 @@ import com.example.startapp.data.model.DailySnapshot
 import com.example.startapp.data.model.Transaction
 import com.example.startapp.domain.defaultDateRange
 import com.example.startapp.domain.filterTransactionsByDateRange
+import com.example.startapp.domain.presetDateRange
 import com.example.startapp.domain.model.CategoryType
 import com.example.startapp.domain.model.DateRangeFilter
 import com.example.startapp.domain.model.ExpenseCategory
@@ -106,8 +107,20 @@ class CounterViewModel(private val repository: CounterDataRepository) : ViewMode
         }
     }
 
+    fun applyAnalysisWindow(days: Int, now: Long = System.currentTimeMillis()) {
+        viewModelScope.launch {
+            val range = presetDateRange(days = days, now = now)
+            repository.updateDaysToDisplay(days)
+            repository.updateDateRangeFilter(
+                startEpochMs = range.startEpochMs,
+                endEpochMs = range.endEpochMs
+            )
+        }
+    }
+
     fun resetDateRangeFilter() {
         viewModelScope.launch {
+            repository.resetDaysToDisplay()
             repository.resetDateRangeFilter()
         }
     }

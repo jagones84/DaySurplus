@@ -7,6 +7,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -53,9 +54,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.startapp.data.model.Transaction
 import com.example.startapp.domain.filterTransactionsByDateRange
+import com.example.startapp.domain.matchingAnalysisWindowPreset
 import com.example.startapp.domain.model.CategoryCatalog
 import com.example.startapp.domain.model.CategoryType
 import com.example.startapp.domain.model.ExpenseCategory
+import com.example.startapp.domain.model.AnalysisWindowPreset
 import com.example.startapp.domain.model.TransactionGroup
 import com.example.startapp.domain.model.buildGroupedTransactionState
 import com.example.startapp.ui.viewmodel.CounterViewModel
@@ -137,6 +140,9 @@ fun CounterScreen(viewModel: CounterViewModel) {
     val dateFormat = remember { SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()) }
     val filterDateFormat = remember { SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()) }
     val expandedCategories = remember { mutableStateMapOf<String, Boolean>() }
+    val selectedAnalysisWindow = remember(dateRangeFilter) {
+        matchingAnalysisWindowPreset(dateRangeFilter)
+    }
 
     LaunchedEffect(dailyIncrease) {
         dailyIncreaseAmount = if (dailyIncrease > 0) dailyIncrease.toString() else ""
@@ -611,6 +617,46 @@ fun CounterScreen(viewModel: CounterViewModel) {
                         style = MaterialTheme.typography.titleSmall
                     )
                     Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Timeframe Window",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    val presetRows = listOf(
+                        listOf(
+                            AnalysisWindowPreset.DAYS_7,
+                            AnalysisWindowPreset.DAYS_30,
+                            AnalysisWindowPreset.DAYS_90
+                        ),
+                        listOf(
+                            AnalysisWindowPreset.DAYS_180,
+                            AnalysisWindowPreset.DAYS_365,
+                            AnalysisWindowPreset.CUSTOM
+                        )
+                    )
+                    presetRows.forEach { presetRow ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            presetRow.forEach { preset ->
+                                Box(modifier = Modifier.weight(1f)) {
+                                    TimeFrameChip(
+                                        text = preset.label,
+                                        isSelected = selectedAnalysisWindow == preset,
+                                        onClick = {
+                                            preset.days?.let { days ->
+                                                viewModel.applyAnalysisWindow(days)
+                                            }
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)

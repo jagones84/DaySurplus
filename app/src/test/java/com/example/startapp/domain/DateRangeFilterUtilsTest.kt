@@ -2,6 +2,7 @@ package com.example.startapp.domain
 
 import com.example.startapp.data.model.DailySnapshot
 import com.example.startapp.data.model.Transaction
+import com.example.startapp.domain.model.AnalysisWindowPreset
 import com.example.startapp.domain.model.DateRangeFilter
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -52,5 +53,37 @@ class DateRangeFilterUtilsTest {
         )
 
         assertTrue(normalized.startEpochMs <= normalized.endEpochMs)
+    }
+
+    @Test
+    fun presetDateRange_usesRequestedInclusiveDayCount() {
+        val now = 1_718_179_200_000L
+
+        val range = presetDateRange(days = 30, now = now)
+
+        assertEquals(30, calculateCoveredDays(range))
+    }
+
+    @Test
+    fun matchingAnalysisWindowPreset_returnsPresetForStandardWindow() {
+        val now = 1_718_179_200_000L
+        val range = presetDateRange(days = 30, now = now)
+
+        val preset = matchingAnalysisWindowPreset(range, now)
+
+        assertEquals(AnalysisWindowPreset.DAYS_30, preset)
+    }
+
+    @Test
+    fun matchingAnalysisWindowPreset_returnsCustomForManualRange() {
+        val now = 1_718_179_200_000L
+        val range = createNormalizedDateRange(
+            startEpochMs = 1_718_006_400_000L,
+            endEpochMs = 1_718_179_200_000L
+        )
+
+        val preset = matchingAnalysisWindowPreset(range, now)
+
+        assertEquals(AnalysisWindowPreset.CUSTOM, preset)
     }
 }

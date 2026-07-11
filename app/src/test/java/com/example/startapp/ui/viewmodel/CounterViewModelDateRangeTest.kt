@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import com.example.startapp.data.CounterDataRepository
 import com.example.startapp.data.model.Transaction
+import com.example.startapp.domain.presetDateRange
 import com.example.startapp.domain.createNormalizedDateRange
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
@@ -52,6 +53,37 @@ class CounterViewModelDateRangeTest {
 
         assertEquals(expected, range)
         assertEquals(listOf("Salary"), grouped.incomeGroups.map { it.category })
+        assertEquals(listOf("Food"), grouped.expenseGroups.map { it.category })
+    }
+
+    @Test
+    fun applyAnalysisWindow_updatesSharedRangeAndFiltersToWindow() = runBlocking {
+        val repository = buildRepository()
+        val viewModel = CounterViewModel(repository)
+        val now = 1_718_179_200_000L
+        val inWindowDate = 1_718_092_800_000L
+        val outOfWindowDate = 1_715_500_800_000L
+
+        repository.addTransaction(Transaction(amount = -20.0, date = inWindowDate, description = "recent", category = "Food"))
+        repository.addTransaction(Transaction(amount = -50.0, date = outOfWindowDate, description = "old", category = "Shopping"))
+
+        viewModel.applyAnalysisWindow(days = 30, now = now)
+
+        val expected = presetDateRange(days = 30, now = now)
+        val range = withTimeout(5_000) {
+            while (viewModel.dateRangeFilter.value != expected) {
+                delay(10)
+            }
+            viewModel.dateRangeFilter.value
+        }
+        val grouped = withTimeout(5_000) {
+            while (viewModel.groupedTransactions.value.expenseGroups.map { it.category } != listOf("Food")) {
+                delay(10)
+            }
+            viewModel.groupedTransactions.value
+        }
+
+        assertEquals(expected, range)
         assertEquals(listOf("Food"), grouped.expenseGroups.map { it.category })
     }
 

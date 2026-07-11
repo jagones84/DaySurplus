@@ -2,6 +2,7 @@ package com.example.startapp.domain
 
 import com.example.startapp.data.model.DailySnapshot
 import com.example.startapp.data.model.Transaction
+import com.example.startapp.domain.model.AnalysisWindowPreset
 import com.example.startapp.domain.model.DateRangeFilter
 import java.util.Calendar
 import kotlin.math.max
@@ -16,13 +17,26 @@ fun createNormalizedDateRange(startEpochMs: Long, endEpochMs: Long): DateRangeFi
 }
 
 fun defaultDateRange(now: Long = System.currentTimeMillis()): DateRangeFilter {
+    return presetDateRange(days = 30, now = now)
+}
+
+fun presetDateRange(days: Int, now: Long = System.currentTimeMillis()): DateRangeFilter {
     val end = endOfDay(now)
     val calendar = Calendar.getInstance().apply { timeInMillis = end }
-    calendar.add(Calendar.DAY_OF_YEAR, -30)
+    calendar.add(Calendar.DAY_OF_YEAR, -(max(days, 1) - 1))
     return DateRangeFilter(
         startEpochMs = startOfDay(calendar.timeInMillis),
         endEpochMs = end
     )
+}
+
+fun matchingAnalysisWindowPreset(
+    range: DateRangeFilter,
+    now: Long = System.currentTimeMillis()
+): AnalysisWindowPreset {
+    return AnalysisWindowPreset.entries.firstOrNull { preset ->
+        preset.days != null && presetDateRange(preset.days, now) == range
+    } ?: AnalysisWindowPreset.CUSTOM
 }
 
 fun filterTransactionsByDateRange(
