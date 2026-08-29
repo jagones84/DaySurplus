@@ -7,16 +7,19 @@ import androidx.lifecycle.viewModelScope
 import com.example.startapp.data.CounterDataRepository
 import com.example.startapp.data.backup.BackupCodec
 import com.example.startapp.data.backup.BackupValidator
-import com.example.startapp.data.model.DailySnapshot
-import com.example.startapp.data.model.Transaction
+import com.example.startapp.data.backup.ImportMode
+import com.example.startapp.domain.model.DailySnapshot
+import com.example.startapp.domain.model.Transaction
 import com.example.startapp.domain.defaultDateRange
 import com.example.startapp.domain.filterTransactionsByDateRange
 import com.example.startapp.domain.presetDateRange
+import com.example.startapp.domain.transactionsToCsv
 import com.example.startapp.domain.model.CategoryType
 import com.example.startapp.domain.model.DateRangeFilter
 import com.example.startapp.domain.model.ExpenseCategory
 import com.example.startapp.domain.model.GroupedTransactionState
 import com.example.startapp.domain.model.buildGroupedTransactionState
+import com.example.startapp.utils.AppLog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.asStateFlow
@@ -51,6 +54,9 @@ class CounterViewModel(private val repository: CounterDataRepository) : ViewMode
 
     private val _incomeCustomCategories = MutableStateFlow<List<String>>(emptyList())
     val incomeCustomCategories = _incomeCustomCategories.asStateFlow()
+
+    private val _maxHistoryDays = MutableStateFlow(900)
+    val maxHistoryDays = _maxHistoryDays.asStateFlow()
 
     init {
         viewModelScope.launch {
@@ -93,6 +99,10 @@ class CounterViewModel(private val repository: CounterDataRepository) : ViewMode
         viewModelScope.launch {
             repository.incomeCustomCategories.collect { _incomeCustomCategories.value = it }
         }
+
+        viewModelScope.launch {
+            repository.maxHistoryDays.collect { _maxHistoryDays.value = it }
+        }
     }
 
     fun updateDaysToDisplay(days: Int) {
@@ -127,30 +137,28 @@ class CounterViewModel(private val repository: CounterDataRepository) : ViewMode
 
     fun addAmount(amount: Double, description: String, category: String = ExpenseCategory.INCOME.label) {
         viewModelScope.launch {
-            val currentTotal = _totalAmount.value
-            repository.updateTotalAmount(currentTotal + amount)
-            repository.addTransaction(
-                Transaction(
+            repository.recordTransaction(
+                transaction = Transaction(
                     amount = amount,
                     date = System.currentTimeMillis(),
                     description = description,
                     category = category
-                )
+                ),
+                totalDelta = amount
             )
         }
     }
 
     fun subtractAmount(amount: Double, description: String, category: String) {
         viewModelScope.launch {
-            val currentTotal = _totalAmount.value
-            repository.updateTotalAmount(currentTotal - amount)
-            repository.addTransaction(
-                Transaction(
+            repository.recordTransaction(
+                transaction = Transaction(
                     amount = -amount,
                     date = System.currentTimeMillis(),
                     description = description,
                     category = category
-                )
+                ),
+                totalDelta = -amount
             )
         }
     }
@@ -178,23 +186,42 @@ class CounterViewModel(private val repository: CounterDataRepository) : ViewMode
         }
     }
 
+    fun renameCustomCategory(type: CategoryType, oldName: String, newName: String, onRenamed: (String) -> Unit = {}) {
+        viewModelScope.launch {
+            repository.renameCustomCategory(type, oldName, newName)?.let(onRenamed)
+        }
+    }
+
+    fun deleteCustomCategory(type: CategoryType, name: String) {
+        viewModelScope.launch {
+            repository.deleteCustomCategory(type, name)
+        }
+    }
+
     suspend fun exportBackupJson(): String {
         return BackupCodec.encode(repository.exportBackup())
     }
 
-    suspend fun importBackupJson(json: String): Boolean {
+    suspend fun exportCsv(): String {
+        return transactionsToCsv(repository.transactions.first())
+    }
+
+    suspend fun importBackupJson(json: String, mode: ImportMode): String? {
         val decoded = try {
             BackupCodec.decode(json)
-        } catch (_: Throwable) {
-            return false
+        } catch (t: Throwable) {
+            AppLog.w("CounterViewModel", "Backup decode failed", t)
+            return "Invalid JSON: ${t.message ?: "unknown error"}"
         }
 
         if (!BackupValidator.validate(decoded)) {
-            return false
+            AppLog.w("CounterViewModel", "Backup rejected by validator")
+            return "Unsupported schema version or invalid values"
         }
 
-        repository.importBackup(decoded)
-        return true
+        repository.importBackup(decoded, mode)
+        AppLog.i("CounterViewModel", "Backup imported in $mode mode")
+        return null
     }
 
     fun updateDailyIncrease(amount: Double) {
@@ -203,22 +230,19 @@ class CounterViewModel(private val repository: CounterDataRepository) : ViewMode
         }
     }
 
-    fun applySurplus() {
+    fun updateMaxHistoryDays(days: Int) {
         viewModelScope.launch {
-            val currentTotal = totalAmount.first()
-            val surplus = dailyIncrease.first()
-            if (surplus > 0) { // Only apply if a surplus is set
-                repository.updateTotalAmount(currentTotal + surplus)
-            }
+            repository.updateMaxHistoryDays(days)
         }
     }
 
     fun reset() {
         viewModelScope.launch {
             repository.updateTotalAmount(0.0)
-            repository.updateDailyIncrease(20.0)
+            repository.updateDailyIncrease(0.0)
             repository.clearTransactions()
             repository.resetDaysToDisplay()
+            repository.resetDateRangeFilter()
         }
     }
 }

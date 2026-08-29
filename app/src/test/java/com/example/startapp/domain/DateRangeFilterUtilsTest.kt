@@ -1,7 +1,7 @@
 package com.example.startapp.domain
 
-import com.example.startapp.data.model.DailySnapshot
-import com.example.startapp.data.model.Transaction
+import com.example.startapp.domain.model.DailySnapshot
+import com.example.startapp.domain.model.Transaction
 import com.example.startapp.domain.model.AnalysisWindowPreset
 import com.example.startapp.domain.model.DateRangeFilter
 import org.junit.Assert.assertEquals

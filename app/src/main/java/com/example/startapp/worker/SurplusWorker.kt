@@ -7,9 +7,11 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.example.startapp.data.CounterDataRepository
-import com.example.startapp.data.model.DailySnapshot
+import com.example.startapp.domain.model.DailySnapshot
+import com.example.startapp.domain.nextSurplusRunDelayMs
+import com.example.startapp.domain.shouldApplyDailyIncrease
+import com.example.startapp.utils.AppLog
 import kotlinx.coroutines.flow.first
-import java.util.Calendar
 import java.util.concurrent.TimeUnit
 
 class SurplusWorker(
@@ -18,39 +20,48 @@ class SurplusWorker(
 ) : CoroutineWorker(appContext, workerParams) {
 
     override suspend fun doWork(): Result {
+        return try {
+            runDailySurplus()
+            scheduleNextRun()
+            Result.success()
+        } catch (t: Throwable) {
+            AppLog.e("SurplusWorker", "Daily surplus run failed (attempt $runAttemptCount)", t)
+            Result.retry()
+        }
+    }
+
+    private suspend fun runDailySurplus() {
         val repository = CounterDataRepository(applicationContext)
+        val now = System.currentTimeMillis()
+
+        // Idempotency guard: if a snapshot already exists for today the chain
+        // was interrupted and restarted; applying the increase again would
+        // double-count today's surplus.
+        val lastSnapshotDate = repository.dailySnapshots.first().maxOfOrNull { it.date }
+        if (!shouldApplyDailyIncrease(lastSnapshotDate, now)) {
+            AppLog.i("SurplusWorker", "Snapshot already present for today, skipping increase")
+            return
+        }
+
         val dailyIncrease = repository.dailyIncrease.first()
         val currentTotal = repository.totalAmount.first()
 
-        // Apply daily increase
-        var newTotal = currentTotal
-        if (dailyIncrease > 0) {
-            newTotal += dailyIncrease
-            repository.updateTotalAmount(newTotal)
+        val newTotal = if (dailyIncrease > 0) {
+            val updated = currentTotal + dailyIncrease
+            repository.updateTotalAmount(updated)
+            updated
+        } else {
+            currentTotal
         }
 
-        // Save daily snapshot
-        repository.addDailySnapshot(DailySnapshot(System.currentTimeMillis(), newTotal))
+        repository.addDailySnapshot(DailySnapshot(date = now, amount = newTotal))
+        AppLog.i("SurplusWorker", "Daily surplus applied: +$dailyIncrease, total=$newTotal")
+    }
 
-        // Schedule the next worker for 12:00 PM tomorrow
-        val currentDate = Calendar.getInstance()
-        val dueDate = Calendar.getInstance()
-        
-        // Set execution time to 12:00 PM
-        dueDate.set(Calendar.HOUR_OF_DAY, 12)
-        dueDate.set(Calendar.MINUTE, 0)
-        dueDate.set(Calendar.SECOND, 0)
-        dueDate.set(Calendar.MILLISECOND, 0)
-
-        // If today's 12:00 PM has already passed, schedule for tomorrow
-        if (dueDate.before(currentDate)) {
-            dueDate.add(Calendar.DAY_OF_MONTH, 1)
-        }
-
-        val timeDiff = dueDate.timeInMillis - currentDate.timeInMillis
-
+    private fun scheduleNextRun() {
+        val delayMs = nextSurplusRunDelayMs(System.currentTimeMillis())
         val nextWorkRequest = OneTimeWorkRequestBuilder<SurplusWorker>()
-            .setInitialDelay(timeDiff, TimeUnit.MILLISECONDS)
+            .setInitialDelay(delayMs, TimeUnit.MILLISECONDS)
             .build()
 
         WorkManager.getInstance(applicationContext).enqueueUniqueWork(
@@ -58,7 +69,6 @@ class SurplusWorker(
             ExistingWorkPolicy.REPLACE,
             nextWorkRequest
         )
-
-        return Result.success()
+        AppLog.i("SurplusWorker", "Next run scheduled in ${delayMs / 60000} minutes")
     }
 }

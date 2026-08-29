@@ -5,8 +5,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.startapp.data.CounterDataRepository
-import com.example.startapp.data.model.DailySnapshot
-import com.example.startapp.data.model.Transaction
+import com.example.startapp.domain.model.DailySnapshot
+import com.example.startapp.domain.model.Transaction
 import com.example.startapp.domain.calculateCoveredDays
 import com.example.startapp.domain.filterSnapshotsByDateRange
 import com.example.startapp.domain.filterTransactionsByDateRange
@@ -244,7 +244,6 @@ internal fun calculateChartStatsForPeriod(
             list.maxByOrNull { it.date }!!
         }.sortedBy { it.date }
     }
-
     val points = mutableListOf<ChartPoint>()
     val surplusValues = aggregatedSnapshots.map { it.amount }
     val baselineSnapshot = sortedSnapshots.lastOrNull { it.date < range.startEpochMs }
@@ -299,14 +298,20 @@ internal fun calculateChartStatsForPeriod(
     )
 }
 
-private fun getPeriodKey(date: Long, timeFrame: TimeFrame): String {
+internal fun getPeriodKey(
+    date: Long,
+    timeFrame: TimeFrame,
+    locale: Locale = Locale.getDefault()
+): String {
+    // Week keys use the week-based year (Y), so days at the end of December
+    // group with the week 1 of the following year instead of splitting.
     val pattern = when (timeFrame) {
         TimeFrame.Day -> "yyyyMMdd"
-        TimeFrame.Week -> "yyyyww"
+        TimeFrame.Week -> "YYYY'W'ww"
         TimeFrame.Month -> "yyyyMM"
         TimeFrame.Year -> "yyyy"
     }
-    return SimpleDateFormat(pattern, Locale.getDefault()).format(Date(date))
+    return SimpleDateFormat(pattern, locale).format(Date(date))
 }
 
 class ChartViewModel(private val repository: CounterDataRepository) : ViewModel() {

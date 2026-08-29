@@ -1,5 +1,8 @@
 package com.example.startapp.data.model
 
+import com.example.startapp.domain.model.DailySnapshot
+import com.example.startapp.domain.model.Transaction
+
 data class AppBackup(
     val schemaVersion: Int,
     val createdAtEpochMs: Long,

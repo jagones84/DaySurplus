@@ -4,7 +4,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import com.example.startapp.data.CounterDataRepository
-import com.example.startapp.data.model.Transaction
+import com.example.startapp.domain.model.Transaction
 import com.example.startapp.domain.presetDateRange
 import com.example.startapp.domain.createNormalizedDateRange
 import kotlinx.coroutines.delay

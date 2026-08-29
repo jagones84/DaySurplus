@@ -1,8 +1,8 @@
 package com.example.startapp.data.backup
 
 import com.example.startapp.data.model.AppBackup
-import com.example.startapp.data.model.DailySnapshot
-import com.example.startapp.data.model.Transaction
+import com.example.startapp.domain.model.DailySnapshot
+import com.example.startapp.domain.model.Transaction
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

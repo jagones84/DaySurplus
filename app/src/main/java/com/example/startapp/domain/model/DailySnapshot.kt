@@ -1,4 +1,4 @@
-package com.example.startapp.data.model
+package com.example.startapp.domain.model
 
 data class DailySnapshot(
     val date: Long,

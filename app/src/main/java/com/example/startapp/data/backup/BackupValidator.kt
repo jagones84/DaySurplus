@@ -15,7 +15,15 @@ object BackupValidator {
         if (backup.maxHistoryDays <= 0) {
             return false
         }
+        if (!backup.totalAmount.isFinite() || !backup.dailyIncrease.isFinite()) {
+            return false
+        }
+        if (backup.transactions.any { transaction -> !transaction.amount.isFinite() || transaction.date < 0 }) {
+            return false
+        }
+        if (backup.dailySnapshots.any { snapshot -> !snapshot.amount.isFinite() || snapshot.date < 0 }) {
+            return false
+        }
         return true
     }
 }
-

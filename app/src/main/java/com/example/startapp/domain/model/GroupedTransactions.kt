@@ -1,6 +1,6 @@
 package com.example.startapp.domain.model
 
-import com.example.startapp.data.model.Transaction
+import com.example.startapp.domain.model.Transaction
 
 data class TransactionGroup(
     val category: String,

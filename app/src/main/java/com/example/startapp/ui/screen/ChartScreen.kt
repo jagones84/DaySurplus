@@ -24,6 +24,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.example.startapp.R
@@ -62,13 +63,13 @@ fun ChartScreen(viewModel: ChartViewModel) {
             .verticalScroll(rememberScrollState())
     ) {
         Text(
-            text = "Performance Chart",
+            text = stringResource(R.string.performance_chart),
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.padding(bottom = 16.dp)
         )
 
         Text(
-            text = "Chart Aggregation",
+            text = stringResource(R.string.chart_aggregation),
             style = MaterialTheme.typography.titleSmall,
             modifier = Modifier.padding(bottom = 8.dp)
         )
@@ -78,9 +79,9 @@ fun ChartScreen(viewModel: ChartViewModel) {
                 .padding(bottom = 16.dp),
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
-            TimeFrame.values().forEach { frame ->
+            TimeFrame.entries.forEach { frame ->
                 TimeFrameChip(
-                    text = frame.label,
+                    text = timeFrameLabel(frame),
                     isSelected = timeFrame == frame,
                     onClick = { viewModel.setTimeFrame(frame) }
                 )
@@ -93,32 +94,32 @@ fun ChartScreen(viewModel: ChartViewModel) {
             val topCategory = stats.categoryExpenses.firstOrNull()
 
             Text(
-                text = "Saving Ratio (Selected Period): %.2f%%".format(stats.savingsRatio * 100),
+                text = stringResource(R.string.saving_ratio, stats.savingsRatio * 100),
                 modifier = Modifier.padding(vertical = 4.dp)
             )
             Text(
-                text = "Total Expenses: %.2f €".format(stats.totalExpenses),
+                text = stringResource(R.string.total_expenses, stats.totalExpenses),
                 modifier = Modifier.padding(vertical = 4.dp)
             )
             Text(
-                text = "Total Income: %.2f €".format(stats.totalIncome),
+                text = stringResource(R.string.total_income, stats.totalIncome),
                 modifier = Modifier.padding(vertical = 4.dp)
             )
             Text(
-                text = "Average Surplus: %.2f €".format(stats.avgSurplus),
+                text = stringResource(R.string.average_surplus, stats.avgSurplus),
                 modifier = Modifier.padding(vertical = 4.dp)
             )
             Text(
-                text = "Surplus Std Dev: %.2f".format(stats.surplusStdDev),
+                text = stringResource(R.string.surplus_std_dev, stats.surplusStdDev),
                 modifier = Modifier.padding(vertical = 8.dp)
             )
             if (topCategory != null) {
                 Text(
-                    text = "Top Expense Category: ${topCategory.category} (%.2f%%)".format(topCategory.percentage * 100),
+                    text = stringResource(R.string.top_expense_category, topCategory.category, topCategory.percentage * 100),
                     modifier = Modifier.padding(vertical = 4.dp)
                 )
                 Text(
-                    text = "Active Expense Categories: ${stats.categoryExpenses.size}",
+                    text = stringResource(R.string.active_expense_categories, stats.categoryExpenses.size),
                     modifier = Modifier.padding(bottom = 12.dp)
                 )
             }
@@ -126,7 +127,7 @@ fun ChartScreen(viewModel: ChartViewModel) {
             AndroidView(
                 factory = { context ->
                     LineChart(context).apply {
-                        setNoDataText("No data available")
+                        setNoDataText(context.getString(R.string.chart_no_data))
                         description.isEnabled = false
 
                         // X-axis styling
@@ -147,8 +148,8 @@ fun ChartScreen(viewModel: ChartViewModel) {
                         axisRight.isEnabled = true
                         axisRight.textColor = Color.WHITE
                         axisRight.gridColor = Color.WHITE
-                        axisRight.setDrawGridLines(false) 
-                        axisRight.axisMinimum = 0f 
+                        axisRight.setDrawGridLines(false)
+                        axisRight.axisMinimum = 0f
 
                         // Legend styling
                         legend.textColor = Color.YELLOW
@@ -162,22 +163,22 @@ fun ChartScreen(viewModel: ChartViewModel) {
                         val surplusEntries = stats.points.map { Entry(it.date.toFloat(), it.surplus.toFloat()) }
                         val expenseEntries = stats.points.map { Entry(it.date.toFloat(), it.expense.toFloat()) }
                         val incomeEntries = stats.points.map { Entry(it.date.toFloat(), it.income.toFloat()) }
-                        
+
                         // Calculate range for Left Axis (Surplus)
                         val minSurplus = stats.points.minOf { it.surplus }.toFloat()
                         val maxSurplus = stats.points.maxOf { it.surplus }.toFloat()
-                        
+
                         // Ensure 0 is included
                         val axisMin = min(0f, minSurplus)
                         val axisMax = max(0f, maxSurplus)
-                        
+
                         // Add some padding (10%)
                         val range = axisMax - axisMin
                         val padding = if (range == 0f) 10f else range * 0.1f
-                        
+
                         chart.axisLeft.axisMinimum = axisMin - padding
                         chart.axisLeft.axisMaximum = axisMax + padding
-                        
+
                         val surplusSet = LineDataSet(surplusEntries, "Surplus").apply {
                             color = Color.YELLOW
                             valueTextColor = Color.YELLOW
@@ -221,22 +222,24 @@ fun ChartScreen(viewModel: ChartViewModel) {
             )
 
             Text(
-                text = "Expense Categories",
+                text = stringResource(R.string.expense_categories),
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.padding(top = 20.dp, bottom = 8.dp)
             )
 
             if (stats.categoryExpenses.isNotEmpty()) {
                 CategoryPieChart(
-                    title = "Expenses",
-                    emptyText = "No expense categories available",
+                    title = stringResource(R.string.pie_expenses),
+                    emptyText = stringResource(R.string.pie_no_expense_categories),
                     slices = stats.categoryExpenses
                 )
 
                 Column(modifier = Modifier.fillMaxWidth()) {
                     stats.categoryExpenses.forEach { slice ->
                         Text(
-                            text = "${slice.category}: %.2f € | %.2f%% | %.2f €/month".format(
+                            text = stringResource(
+                                R.string.category_slice_line,
+                                slice.category,
                                 slice.total,
                                 slice.percentage * 100,
                                 slice.monthlyAverage
@@ -248,28 +251,30 @@ fun ChartScreen(viewModel: ChartViewModel) {
                 }
             } else {
                 Text(
-                    text = "No expense data available for the selected period.",
+                    text = stringResource(R.string.no_expense_data),
                     modifier = Modifier.padding(vertical = 8.dp)
                 )
             }
 
             Text(
-                text = "Income Categories",
+                text = stringResource(R.string.income_categories),
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.padding(top = 20.dp, bottom = 8.dp)
             )
 
             if (stats.categoryIncome.isNotEmpty()) {
                 CategoryPieChart(
-                    title = "Income",
-                    emptyText = "No income categories available",
+                    title = stringResource(R.string.pie_income),
+                    emptyText = stringResource(R.string.pie_no_income_categories),
                     slices = stats.categoryIncome
                 )
 
                 Column(modifier = Modifier.fillMaxWidth()) {
                     stats.categoryIncome.forEach { slice ->
                         Text(
-                            text = "${slice.category}: %.2f € | %.2f%% | %.2f €/month".format(
+                            text = stringResource(
+                                R.string.category_slice_line,
+                                slice.category,
                                 slice.total,
                                 slice.percentage * 100,
                                 slice.monthlyAverage
@@ -281,58 +286,66 @@ fun ChartScreen(viewModel: ChartViewModel) {
                 }
             } else {
                 Text(
-                    text = "No income data available for the selected period.",
+                    text = stringResource(R.string.no_income_data),
                     modifier = Modifier.padding(vertical = 8.dp)
                 )
             }
 
             Text(
-                text = "Analytics (Selected Period)",
+                text = stringResource(R.string.analytics_period),
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.padding(top = 20.dp, bottom = 8.dp)
             )
 
             if (stats.topExpenseDescriptions.isNotEmpty()) {
                 Text(
-                    text = "Top Expense Descriptions",
+                    text = stringResource(R.string.top_expense_descriptions),
                     style = MaterialTheme.typography.titleSmall,
                     modifier = Modifier.padding(bottom = 4.dp)
                 )
                 stats.topExpenseDescriptions.forEach { metric ->
                     Text(
-                        text = "${metric.label}: %.2f €".format(metric.total),
+                        text = stringResource(R.string.metric_line, metric.label, metric.total),
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.padding(vertical = 2.dp)
                     )
                 }
             } else {
                 Text(
-                    text = "No expense description data available.",
+                    text = stringResource(R.string.no_expense_description_data),
                     modifier = Modifier.padding(vertical = 4.dp)
                 )
             }
 
             if (stats.topExpenseDays.isNotEmpty()) {
                 Text(
-                    text = "Top Expense Days",
+                    text = stringResource(R.string.top_expense_days),
                     style = MaterialTheme.typography.titleSmall,
                     modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
                 )
                 stats.topExpenseDays.forEach { metric ->
                     Text(
-                        text = "${metric.label}: %.2f €".format(metric.total),
+                        text = stringResource(R.string.metric_line, metric.label, metric.total),
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.padding(vertical = 2.dp)
                     )
                 }
             } else {
                 Text(
-                    text = "No expense day data available.",
+                    text = stringResource(R.string.no_expense_day_data),
                     modifier = Modifier.padding(vertical = 4.dp)
                 )
             }
         }
     }
+}
+
+@Composable
+private fun timeFrameLabel(frame: TimeFrame): String = when (frame) {
+    TimeFrame.Day -> stringResource(R.string.tf_daily)
+    TimeFrame.Week -> stringResource(R.string.tf_weekly)
+    TimeFrame.Month -> stringResource(R.string.tf_monthly)
+    TimeFrame.Year -> stringResource(R.string.tf_yearly)
 }
 
 @Composable

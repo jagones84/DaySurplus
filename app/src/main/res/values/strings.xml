@@ -1,3 +1,118 @@
 <resources>
     <string name="app_name">DaySurplus</string>
+
+    <!-- Navigation -->
+    <string name="nav_counter">Counter</string>
+    <string name="nav_chart">Chart</string>
+    <string name="nav_settings">Settings</string>
+
+    <!-- Counter screen -->
+    <string name="total_surplus">Total Surplus</string>
+    <string name="amount_euro">%1$.2f €</string>
+    <string name="add_or_subtract_amount">Add or Subtract Amount</string>
+    <string name="description_label">Description</string>
+    <string name="income_category">Income Category</string>
+    <string name="expense_category">Expense Category</string>
+    <string name="add">Add</string>
+    <string name="subtract">Subtract</string>
+    <string name="day_surplus">Day Surplus</string>
+    <string name="day_surplus_hint">(Monthly Incomes - Monthly Expenses) * 12 / 365</string>
+    <string name="history">History</string>
+    <string name="analysis_range">Analysis Range</string>
+    <string name="timeframe_window">Timeframe Window</string>
+    <string name="from_date">From: %1$s</string>
+    <string name="to_date">To: %1$s</string>
+    <string name="reset_filter">Reset filter</string>
+    <string name="search">Search</string>
+    <string name="scope">Scope</string>
+    <string name="scope_all">All</string>
+    <string name="scope_income">Income</string>
+    <string name="scope_expense">Expense</string>
+    <string name="category">Category</string>
+    <string name="export_backup">Export Backup</string>
+    <string name="import_backup">Import Backup</string>
+    <string name="export_csv">Export CSV</string>
+    <string name="reset_all_data">Reset All Data</string>
+    <string name="reset_data_title">Reset Data</string>
+    <string name="reset_data_message">Are you sure you want to reset all data? This action cannot be undone.</string>
+    <string name="reset">Reset</string>
+    <string name="cancel">Cancel</string>
+    <string name="new_category">New Category</string>
+    <string name="category_name">Category Name</string>
+    <string name="save">Save</string>
+    <string name="edit_transaction">Edit Transaction</string>
+    <string name="amount">Amount</string>
+    <string name="backup_title">Backup</string>
+    <string name="backup_exported">Backup exported.</string>
+    <string name="backup_export_failed">Backup export failed: %1$s</string>
+    <string name="backup_imported">Backup imported.</string>
+    <string name="backup_import_failed">Backup import failed: %1$s</string>
+    <string name="import_choose_mode_title">Import backup</string>
+    <string name="import_choose_mode_message">Replace all current data with the backup, or merge the backup into existing data?</string>
+    <string name="import_replace_all">Replace all</string>
+    <string name="import_merge">Merge</string>
+    <string name="invalid_amount">Enter an amount greater than zero</string>
+    <string name="no_transactions_period">No transactions in the selected period.</string>
+    <string name="no_transactions_filters">No transactions match the current filters.</string>
+    <string name="income_by_category">Income By Category</string>
+    <string name="expenses_by_category">Expenses By Category</string>
+    <string name="income_entries_count">%1$d income entries - %2$s</string>
+    <string name="expenses_count">%1$d expenses - %2$s</string>
+    <string name="collapse">[-] Collapse</string>
+    <string name="expand">[+] Expand</string>
+    <string name="edit_transaction_cd">Edit transaction</string>
+    <string name="delete_transaction_cd">Delete transaction</string>
+    <string name="legal_notice_1">Copyright © 2025 Giovanni Mauceri. All Rights Reserved.</string>
+    <string name="legal_notice_2">Unauthorized copying, modification, distribution, or public performance of this software is strictly prohibited.</string>
+
+    <!-- Custom categories management -->
+    <string name="custom_categories">Custom Categories</string>
+    <string name="custom_categories_expense">Expense</string>
+    <string name="custom_categories_income">Income</string>
+    <string name="no_custom_categories">No custom categories yet.</string>
+    <string name="rename_category">Rename category</string>
+    <string name="delete_category">Delete category</string>
+    <string name="rename_category_title">Rename category</string>
+    <string name="category_in_use_note">History entries keep the old label.</string>
+
+    <!-- Chart screen -->
+    <string name="performance_chart">Performance Chart</string>
+    <string name="chart_aggregation">Chart Aggregation</string>
+    <string name="tf_daily">Daily</string>
+    <string name="tf_weekly">Weekly</string>
+    <string name="tf_monthly">Monthly</string>
+    <string name="tf_yearly">Yearly</string>
+    <string name="saving_ratio">Saving Ratio (Selected Period): %1$.2f%%</string>
+    <string name="total_expenses">Total Expenses: %1$.2f €</string>
+    <string name="total_income">Total Income: %1$.2f €</string>
+    <string name="average_surplus">Average Surplus: %1$.2f €</string>
+    <string name="surplus_std_dev">Surplus Std Dev: %1$.2f</string>
+    <string name="top_expense_category">Top Expense Category: %1$s (%2$.2f%%)</string>
+    <string name="active_expense_categories">Active Expense Categories: %1$d</string>
+    <string name="expense_categories">Expense Categories</string>
+    <string name="income_categories">Income Categories</string>
+    <string name="category_slice_line">%1$s: %2$.2f € | %3$.2f%% | %4$.2f €/month</string>
+    <string name="no_expense_data">No expense data available for the selected period.</string>
+    <string name="no_income_data">No income data available for the selected period.</string>
+    <string name="analytics_period">Analytics (Selected Period)</string>
+    <string name="top_expense_descriptions">Top Expense Descriptions</string>
+    <string name="top_expense_days">Top Expense Days</string>
+    <string name="metric_line">%1$s: %2$.2f €</string>
+    <string name="no_expense_description_data">No expense description data available.</string>
+    <string name="no_expense_day_data">No expense day data available.</string>
+    <string name="chart_no_data">No data available</string>
+    <string name="pie_expenses">Expenses</string>
+    <string name="pie_income">Income</string>
+    <string name="pie_no_expense_categories">No expense categories available</string>
+    <string name="pie_no_income_categories">No income categories available</string>
+
+    <!-- Settings screen -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_section_retention">History retention</string>
+    <string name="max_history_days">Max history days</string>
+    <string name="max_history_days_hint">Transactions and snapshots older than this are removed when new data is added.</string>
+    <string name="max_history_days_invalid">Enter a positive whole number</string>
+    <string name="retention_saved">Retention saved</string>
+    <string name="settings_section_data">Data</string>
+    <string name="settings_data_note">Use the Counter tab to export/import backups (JSON) or export CSV.</string>
 </resources>

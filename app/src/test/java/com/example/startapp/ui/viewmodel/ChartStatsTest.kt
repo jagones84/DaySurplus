@@ -1,7 +1,7 @@
 package com.example.startapp.ui.viewmodel
 
-import com.example.startapp.data.model.DailySnapshot
-import com.example.startapp.data.model.Transaction
+import com.example.startapp.domain.model.DailySnapshot
+import com.example.startapp.domain.model.Transaction
 import com.example.startapp.domain.createNormalizedDateRange
 import com.example.startapp.domain.model.DateRangeFilter
 import com.example.startapp.domain.model.ExpenseCategory

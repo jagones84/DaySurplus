@@ -2,6 +2,7 @@ package com.example.startapp.ui.screen
 
 import android.app.DatePickerDialog
 import android.content.Context
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
@@ -15,7 +16,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
@@ -49,25 +49,31 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.example.startapp.data.model.Transaction
+import com.example.startapp.R
+import com.example.startapp.data.backup.ImportMode
 import com.example.startapp.domain.filterTransactionsByDateRange
 import com.example.startapp.domain.matchingAnalysisWindowPreset
+import com.example.startapp.domain.model.AnalysisWindowPreset
 import com.example.startapp.domain.model.CategoryCatalog
 import com.example.startapp.domain.model.CategoryType
 import com.example.startapp.domain.model.ExpenseCategory
-import com.example.startapp.domain.model.AnalysisWindowPreset
+import com.example.startapp.domain.model.Transaction
 import com.example.startapp.domain.model.TransactionGroup
 import com.example.startapp.domain.model.buildGroupedTransactionState
 import com.example.startapp.ui.viewmodel.CounterViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlin.math.abs
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import kotlin.math.abs
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -85,7 +91,7 @@ fun CounterScreen(viewModel: CounterViewModel) {
 
     var manualAmount by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
-    var dailyIncreaseAmount by remember { mutableStateOf(dailyIncrease.toString()) }
+    var dailyIncreaseAmount by remember { mutableStateOf("") }
     var showResetDialog by remember { mutableStateOf(false) }
     var selectedIncomeCategory by remember { mutableStateOf("Salary") }
     var selectedExpenseCategory by remember { mutableStateOf(ExpenseCategory.FOOD.label) }
@@ -105,18 +111,55 @@ fun CounterScreen(viewModel: CounterViewModel) {
     var historyCategoryFilter by remember { mutableStateOf("All") }
     var historyCategoryMenuExpanded by remember { mutableStateOf(false) }
     var backupResultMessage by remember { mutableStateOf<String?>(null) }
+    var pendingImportUri by remember { mutableStateOf<Uri?>(null) }
+    var renamingCategoryType by remember { mutableStateOf<CategoryType?>(null) }
+    var renamingCategoryOldName by remember { mutableStateOf("") }
+    var renamingCategoryNewName by remember { mutableStateOf("") }
+    var deletingCategoryType by remember { mutableStateOf<CategoryType?>(null) }
+    var deletingCategoryName by remember { mutableStateOf("") }
 
     val exportBackupLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json")
     ) { uri ->
         if (uri != null) {
             coroutineScope.launch {
-                val json = viewModel.exportBackupJson()
-                context.contentResolver.openOutputStream(uri)?.use { output ->
-                    output.write(json.toByteArray())
-                    output.flush()
+                backupResultMessage = runCatching {
+                    withContext(Dispatchers.IO) {
+                        val json = viewModel.exportBackupJson()
+                        val output = context.contentResolver.openOutputStream(uri)
+                            ?: error("Cannot open output stream")
+                        output.use { stream ->
+                            stream.write(json.toByteArray(Charsets.UTF_8))
+                            stream.flush()
+                        }
+                    }
+                    context.getString(R.string.backup_exported)
+                }.getOrElse {
+                    context.getString(R.string.backup_export_failed, it.message ?: "unknown")
                 }
-                backupResultMessage = "Backup exported."
+            }
+        }
+    }
+
+    val exportCsvLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri ->
+        if (uri != null) {
+            coroutineScope.launch {
+                backupResultMessage = runCatching {
+                    withContext(Dispatchers.IO) {
+                        val csv = viewModel.exportCsv()
+                        val output = context.contentResolver.openOutputStream(uri)
+                            ?: error("Cannot open output stream")
+                        output.use { stream ->
+                            stream.write(csv.toByteArray(Charsets.UTF_8))
+                            stream.flush()
+                        }
+                    }
+                    context.getString(R.string.backup_exported)
+                }.getOrElse {
+                    context.getString(R.string.backup_export_failed, it.message ?: "unknown")
+                }
             }
         }
     }
@@ -125,14 +168,27 @@ fun CounterScreen(viewModel: CounterViewModel) {
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
-            coroutineScope.launch {
-                val json = context.contentResolver.openInputStream(uri)
-                    ?.bufferedReader()
-                    ?.use { it.readText() }
-                    .orEmpty()
+            pendingImportUri = uri
+        }
+    }
 
-                val ok = viewModel.importBackupJson(json)
-                backupResultMessage = if (ok) "Backup imported." else "Backup import failed."
+    fun performImport(uri: Uri, mode: ImportMode) {
+        coroutineScope.launch {
+            backupResultMessage = runCatching {
+                val json = withContext(Dispatchers.IO) {
+                    context.contentResolver.openInputStream(uri)
+                        ?.bufferedReader()
+                        ?.use { it.readText() }
+                        .orEmpty()
+                }
+                val error = viewModel.importBackupJson(json, mode)
+                if (error == null) {
+                    context.getString(R.string.backup_imported)
+                } else {
+                    context.getString(R.string.backup_import_failed, error)
+                }
+            }.getOrElse {
+                context.getString(R.string.backup_import_failed, it.message ?: "unknown")
             }
         }
     }
@@ -144,9 +200,15 @@ fun CounterScreen(viewModel: CounterViewModel) {
         matchingAnalysisWindowPreset(dateRangeFilter)
     }
 
-    LaunchedEffect(dailyIncrease) {
-        dailyIncreaseAmount = if (dailyIncrease > 0) dailyIncrease.toString() else ""
+    LaunchedEffect(Unit) {
+        val initial = viewModel.dailyIncrease.first()
+        if (initial > 0) {
+            dailyIncreaseAmount = initial.toString()
+        }
     }
+
+    val parsedManualAmount = manualAmount.toDoubleOrNull()?.takeIf { it > 0.0 }
+    val parsedEditAmount = editAmount.toDoubleOrNull()?.takeIf { it > 0.0 }
 
     val periodTransactions = remember(transactions, dateRangeFilter) {
         filterTransactionsByDateRange(transactions, dateRangeFilter).reversed()
@@ -211,8 +273,8 @@ fun CounterScreen(viewModel: CounterViewModel) {
     if (showResetDialog) {
         AlertDialog(
             onDismissRequest = { showResetDialog = false },
-            title = { Text("Reset Data") },
-            text = { Text("Are you sure you want to reset all data? This action cannot be undone.") },
+            title = { Text(stringResource(R.string.reset_data_title)) },
+            text = { Text(stringResource(R.string.reset_data_message)) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -220,12 +282,45 @@ fun CounterScreen(viewModel: CounterViewModel) {
                         showResetDialog = false
                     }
                 ) {
-                    Text("Reset")
+                    Text(stringResource(R.string.reset))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showResetDialog = false }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
+    }
+
+    if (pendingImportUri != null) {
+        AlertDialog(
+            onDismissRequest = { pendingImportUri = null },
+            title = { Text(stringResource(R.string.import_choose_mode_title)) },
+            text = { Text(stringResource(R.string.import_choose_mode_message)) },
+            confirmButton = {
+                Row {
+                    TextButton(
+                        onClick = {
+                            val uri = pendingImportUri
+                            pendingImportUri = null
+                            if (uri != null) performImport(uri, ImportMode.REPLACE)
+                        }
+                    ) {
+                        Text(stringResource(R.string.import_replace_all))
+                    }
+                    TextButton(
+                        onClick = {
+                            val uri = pendingImportUri
+                            pendingImportUri = null
+                            if (uri != null) performImport(uri, ImportMode.MERGE)
+                        }
+                    ) {
+                        Text(stringResource(R.string.import_merge))
+                    }
+                    TextButton(onClick = { pendingImportUri = null }) {
+                        Text(stringResource(R.string.cancel))
+                    }
                 }
             }
         )
@@ -238,12 +333,12 @@ fun CounterScreen(viewModel: CounterViewModel) {
                 pendingCategoryType = null
                 newCategoryName = ""
             },
-            title = { Text("New Category") },
+            title = { Text(stringResource(R.string.new_category)) },
             text = {
                 OutlinedTextField(
                     value = newCategoryName,
                     onValueChange = { newCategoryName = it },
-                    label = { Text("Category Name") },
+                    label = { Text(stringResource(R.string.category_name)) },
                     modifier = Modifier.fillMaxWidth()
                 )
             },
@@ -265,7 +360,7 @@ fun CounterScreen(viewModel: CounterViewModel) {
                         }
                     }
                 ) {
-                    Text("Save")
+                    Text(stringResource(R.string.save))
                 }
             },
             dismissButton = {
@@ -276,7 +371,90 @@ fun CounterScreen(viewModel: CounterViewModel) {
                         newCategoryName = ""
                     }
                 ) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
+    }
+
+    if (renamingCategoryType != null) {
+        val type = renamingCategoryType ?: return
+        AlertDialog(
+            onDismissRequest = {
+                renamingCategoryType = null
+                renamingCategoryOldName = ""
+                renamingCategoryNewName = ""
+            },
+            title = { Text(stringResource(R.string.rename_category_title)) },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = renamingCategoryNewName,
+                        onValueChange = { renamingCategoryNewName = it },
+                        label = { Text(stringResource(R.string.category_name)) },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = stringResource(R.string.category_in_use_note),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.renameCustomCategory(type, renamingCategoryOldName, renamingCategoryNewName)
+                        renamingCategoryType = null
+                        renamingCategoryOldName = ""
+                        renamingCategoryNewName = ""
+                    }
+                ) {
+                    Text(stringResource(R.string.save))
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        renamingCategoryType = null
+                        renamingCategoryOldName = ""
+                        renamingCategoryNewName = ""
+                    }
+                ) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
+    }
+
+    if (deletingCategoryType != null) {
+        val type = deletingCategoryType ?: return
+        AlertDialog(
+            onDismissRequest = {
+                deletingCategoryType = null
+                deletingCategoryName = ""
+            },
+            title = { Text(stringResource(R.string.delete_category)) },
+            text = { Text("${stringResource(R.string.category_in_use_note)} (${deletingCategoryName})") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.deleteCustomCategory(type, deletingCategoryName)
+                        deletingCategoryType = null
+                        deletingCategoryName = ""
+                    }
+                ) {
+                    Text(stringResource(R.string.delete_category))
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        deletingCategoryType = null
+                        deletingCategoryName = ""
+                    }
+                ) {
+                    Text(stringResource(R.string.cancel))
                 }
             }
         )
@@ -296,23 +474,30 @@ fun CounterScreen(viewModel: CounterViewModel) {
                 editSelectedCategory = ""
                 editCategoryMenuExpanded = false
             },
-            title = { Text("Edit Transaction") },
+            title = { Text(stringResource(R.string.edit_transaction)) },
             text = {
                 Column {
                     OutlinedTextField(
                         value = editAmount,
                         onValueChange = { editAmount = it },
-                        label = { Text("Amount") },
+                        label = { Text(stringResource(R.string.amount)) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.fillMaxWidth()
                     )
+                    if (parsedEditAmount == null) {
+                        Text(
+                            text = stringResource(R.string.invalid_amount),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
 
                     Spacer(modifier = Modifier.height(8.dp))
 
                     OutlinedTextField(
                         value = editDescription,
                         onValueChange = { editDescription = it },
-                        label = { Text("Description") },
+                        label = { Text(stringResource(R.string.description_label)) },
                         modifier = Modifier.fillMaxWidth()
                     )
 
@@ -326,7 +511,7 @@ fun CounterScreen(viewModel: CounterViewModel) {
                             value = editSelectedCategory,
                             onValueChange = {},
                             readOnly = true,
-                            label = { Text(if (isIncome) "Income Category" else "Expense Category") },
+                            label = { Text(if (isIncome) stringResource(R.string.income_category) else stringResource(R.string.expense_category)) },
                             trailingIcon = {
                                 ExposedDropdownMenuDefaults.TrailingIcon(expanded = editCategoryMenuExpanded)
                             },
@@ -340,7 +525,15 @@ fun CounterScreen(viewModel: CounterViewModel) {
                         ) {
                             CategoryCatalog.dropdownOptions(type, custom).forEach { category ->
                                 DropdownMenuItem(
-                                    text = { Text(category) },
+                                    text = {
+                                        Text(
+                                            if (category == CategoryCatalog.NEW_CATEGORY_OPTION) {
+                                                stringResource(R.string.new_category)
+                                            } else {
+                                                category
+                                            }
+                                        )
+                                    },
                                     onClick = {
                                         if (category == CategoryCatalog.NEW_CATEGORY_OPTION) {
                                             pendingCategoryType = type
@@ -358,9 +551,9 @@ fun CounterScreen(viewModel: CounterViewModel) {
             },
             confirmButton = {
                 TextButton(
+                    enabled = parsedEditAmount != null,
                     onClick = {
-                        val parsed = editAmount.toDoubleOrNull() ?: 0.0
-                        val magnitude = abs(parsed)
+                        val magnitude = parsedEditAmount ?: return@TextButton
                         val newAmount = if (isIncome) magnitude else -magnitude
                         viewModel.updateTransaction(
                             id = transaction.id,
@@ -376,7 +569,7 @@ fun CounterScreen(viewModel: CounterViewModel) {
                         editCategoryMenuExpanded = false
                     }
                 ) {
-                    Text("Save")
+                    Text(stringResource(R.string.save))
                 }
             },
             dismissButton = {
@@ -389,7 +582,7 @@ fun CounterScreen(viewModel: CounterViewModel) {
                         editCategoryMenuExpanded = false
                     }
                 ) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.cancel))
                 }
             }
         )
@@ -398,7 +591,7 @@ fun CounterScreen(viewModel: CounterViewModel) {
     if (backupResultMessage != null) {
         AlertDialog(
             onDismissRequest = { backupResultMessage = null },
-            title = { Text("Backup") },
+            title = { Text(stringResource(R.string.backup_title)) },
             text = { Text(backupResultMessage!!) },
             confirmButton = {
                 TextButton(onClick = { backupResultMessage = null }) {
@@ -423,13 +616,13 @@ fun CounterScreen(viewModel: CounterViewModel) {
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        text = "Total Surplus",
+                        text = stringResource(R.string.total_surplus),
                         style = MaterialTheme.typography.titleMedium,
                         modifier = Modifier.fillMaxWidth(),
                         textAlign = TextAlign.Center
                     )
                     Text(
-                        text = String.format("%.2f €", totalAmount),
+                        text = stringResource(R.string.amount_euro, totalAmount),
                         style = MaterialTheme.typography.headlineLarge,
                         modifier = Modifier.fillMaxWidth(),
                         textAlign = TextAlign.Center
@@ -447,17 +640,24 @@ fun CounterScreen(viewModel: CounterViewModel) {
                     OutlinedTextField(
                         value = manualAmount,
                         onValueChange = { manualAmount = it },
-                        label = { Text("Add or Subtract Amount") },
+                        label = { Text(stringResource(R.string.add_or_subtract_amount)) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.fillMaxWidth()
                     )
+                    if (manualAmount.isNotBlank() && parsedManualAmount == null) {
+                        Text(
+                            text = stringResource(R.string.invalid_amount),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
 
                     Spacer(modifier = Modifier.height(8.dp))
 
                     OutlinedTextField(
                         value = description,
                         onValueChange = { description = it },
-                        label = { Text("Description") },
+                        label = { Text(stringResource(R.string.description_label)) },
                         modifier = Modifier.fillMaxWidth()
                     )
 
@@ -471,7 +671,7 @@ fun CounterScreen(viewModel: CounterViewModel) {
                             value = selectedIncomeCategory,
                             onValueChange = {},
                             readOnly = true,
-                            label = { Text("Income Category") },
+                            label = { Text(stringResource(R.string.income_category)) },
                             trailingIcon = {
                                 ExposedDropdownMenuDefaults.TrailingIcon(expanded = incomeCategoryMenuExpanded)
                             },
@@ -485,7 +685,15 @@ fun CounterScreen(viewModel: CounterViewModel) {
                         ) {
                             CategoryCatalog.dropdownOptions(CategoryType.INCOME, incomeCustomCategories).forEach { category ->
                                 DropdownMenuItem(
-                                    text = { Text(category) },
+                                    text = {
+                                        Text(
+                                            if (category == CategoryCatalog.NEW_CATEGORY_OPTION) {
+                                                stringResource(R.string.new_category)
+                                            } else {
+                                                category
+                                            }
+                                        )
+                                    },
                                     onClick = {
                                         if (category == CategoryCatalog.NEW_CATEGORY_OPTION) {
                                             pendingCategoryType = CategoryType.INCOME
@@ -510,7 +718,7 @@ fun CounterScreen(viewModel: CounterViewModel) {
                             value = selectedExpenseCategory,
                             onValueChange = {},
                             readOnly = true,
-                            label = { Text("Expense Category") },
+                            label = { Text(stringResource(R.string.expense_category)) },
                             trailingIcon = {
                                 ExposedDropdownMenuDefaults.TrailingIcon(expanded = expenseCategoryMenuExpanded)
                             },
@@ -524,7 +732,15 @@ fun CounterScreen(viewModel: CounterViewModel) {
                         ) {
                             CategoryCatalog.dropdownOptions(CategoryType.EXPENSE, expenseCustomCategories).forEach { category ->
                                 DropdownMenuItem(
-                                    text = { Text(category) },
+                                    text = {
+                                        Text(
+                                            if (category == CategoryCatalog.NEW_CATEGORY_OPTION) {
+                                                stringResource(R.string.new_category)
+                                            } else {
+                                                category
+                                            }
+                                        )
+                                    },
                                     onClick = {
                                         if (category == CategoryCatalog.NEW_CATEGORY_OPTION) {
                                             pendingCategoryType = CategoryType.EXPENSE
@@ -545,27 +761,35 @@ fun CounterScreen(viewModel: CounterViewModel) {
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceEvenly
                     ) {
-                        Button(onClick = {
-                            viewModel.addAmount(
-                                amount = manualAmount.toDoubleOrNull() ?: 0.0,
-                                description = description,
-                                category = selectedIncomeCategory
-                            )
-                            manualAmount = ""
-                            description = ""
-                        }) {
-                            Text("Add")
+                        Button(
+                            enabled = parsedManualAmount != null,
+                            onClick = {
+                                val amount = parsedManualAmount ?: return@Button
+                                viewModel.addAmount(
+                                    amount = amount,
+                                    description = description,
+                                    category = selectedIncomeCategory
+                                )
+                                manualAmount = ""
+                                description = ""
+                            }
+                        ) {
+                            Text(stringResource(R.string.add))
                         }
-                        Button(onClick = {
-                            viewModel.subtractAmount(
-                                amount = manualAmount.toDoubleOrNull() ?: 0.0,
-                                description = description,
-                                category = selectedExpenseCategory
-                            )
-                            manualAmount = ""
-                            description = ""
-                        }) {
-                            Text("Subtract")
+                        Button(
+                            enabled = parsedManualAmount != null,
+                            onClick = {
+                                val amount = parsedManualAmount ?: return@Button
+                                viewModel.subtractAmount(
+                                    amount = amount,
+                                    description = description,
+                                    category = selectedExpenseCategory
+                                )
+                                manualAmount = ""
+                                description = ""
+                            }
+                        ) {
+                            Text(stringResource(R.string.subtract))
                         }
                     }
                 }
@@ -580,17 +804,17 @@ fun CounterScreen(viewModel: CounterViewModel) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     OutlinedTextField(
                         value = dailyIncreaseAmount,
-                        onValueChange = {
-                            dailyIncreaseAmount = it
-                            viewModel.updateDailyIncrease(it.toDoubleOrNull() ?: 0.0)
+                        onValueChange = { newValue ->
+                            dailyIncreaseAmount = newValue
+                            viewModel.updateDailyIncrease(newValue.toDoubleOrNull() ?: 0.0)
                         },
-                        label = { Text("Day Surplus") },
+                        label = { Text(stringResource(R.string.day_surplus)) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.fillMaxWidth()
                     )
 
                     Text(
-                        text = "(Monthly Incomes - Monthly Expenses) * 12 / 365",
+                        text = stringResource(R.string.day_surplus_hint),
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(start = 16.dp, top = 4.dp)
                     )
@@ -607,18 +831,18 @@ fun CounterScreen(viewModel: CounterViewModel) {
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
                     Text(
-                        text = "History",
+                        text = stringResource(R.string.history),
                         style = MaterialTheme.typography.titleMedium,
                         textAlign = TextAlign.Start
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "Analysis Range",
+                        text = stringResource(R.string.analysis_range),
                         style = MaterialTheme.typography.titleSmall
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "Timeframe Window",
+                        text = stringResource(R.string.timeframe_window),
                         style = MaterialTheme.typography.bodyMedium
                     )
                     Spacer(modifier = Modifier.height(8.dp))
@@ -675,7 +899,12 @@ fun CounterScreen(viewModel: CounterViewModel) {
                             },
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text("Da: ${filterDateFormat.format(Date(dateRangeFilter.startEpochMs))}")
+                            Text(
+                                stringResource(
+                                    R.string.from_date,
+                                    filterDateFormat.format(Date(dateRangeFilter.startEpochMs))
+                                )
+                            )
                         }
                         Button(
                             onClick = {
@@ -691,7 +920,12 @@ fun CounterScreen(viewModel: CounterViewModel) {
                             },
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text("A: ${filterDateFormat.format(Date(dateRangeFilter.endEpochMs))}")
+                            Text(
+                                stringResource(
+                                    R.string.to_date,
+                                    filterDateFormat.format(Date(dateRangeFilter.endEpochMs))
+                                )
+                            )
                         }
                     }
                     Spacer(modifier = Modifier.height(8.dp))
@@ -699,7 +933,7 @@ fun CounterScreen(viewModel: CounterViewModel) {
                         onClick = { viewModel.resetDateRangeFilter() },
                         modifier = Modifier.align(Alignment.End)
                     ) {
-                        Text("Reset filtro")
+                        Text(stringResource(R.string.reset_filter))
                     }
                 }
             }
@@ -714,7 +948,7 @@ fun CounterScreen(viewModel: CounterViewModel) {
                     OutlinedTextField(
                         value = historySearchQuery,
                         onValueChange = { historySearchQuery = it },
-                        label = { Text("Search") },
+                        label = { Text(stringResource(R.string.search)) },
                         modifier = Modifier.fillMaxWidth()
                     )
 
@@ -725,10 +959,10 @@ fun CounterScreen(viewModel: CounterViewModel) {
                         onExpandedChange = { historyScopeMenuExpanded = !historyScopeMenuExpanded }
                     ) {
                         OutlinedTextField(
-                            value = historyScope,
+                            value = scopeDisplayLabel(historyScope),
                             onValueChange = {},
                             readOnly = true,
-                            label = { Text("Scope") },
+                            label = { Text(stringResource(R.string.scope)) },
                             trailingIcon = {
                                 ExposedDropdownMenuDefaults.TrailingIcon(expanded = historyScopeMenuExpanded)
                             },
@@ -742,7 +976,7 @@ fun CounterScreen(viewModel: CounterViewModel) {
                         ) {
                             listOf("All", "Income", "Expense").forEach { scope ->
                                 DropdownMenuItem(
-                                    text = { Text(scope) },
+                                    text = { Text(scopeDisplayLabel(scope)) },
                                     onClick = {
                                         historyScope = scope
                                         historyScopeMenuExpanded = false
@@ -762,7 +996,7 @@ fun CounterScreen(viewModel: CounterViewModel) {
                             value = historyCategoryFilter,
                             onValueChange = {},
                             readOnly = true,
-                            label = { Text("Category") },
+                            label = { Text(stringResource(R.string.category)) },
                             trailingIcon = {
                                 ExposedDropdownMenuDefaults.TrailingIcon(expanded = historyCategoryMenuExpanded)
                             },
@@ -790,6 +1024,22 @@ fun CounterScreen(viewModel: CounterViewModel) {
         }
 
         item {
+            CustomCategoriesCard(
+                expenseCustomCategories = expenseCustomCategories,
+                incomeCustomCategories = incomeCustomCategories,
+                onRename = { type, name ->
+                    renamingCategoryType = type
+                    renamingCategoryOldName = name
+                    renamingCategoryNewName = name
+                },
+                onDelete = { type, name ->
+                    deletingCategoryType = type
+                    deletingCategoryName = name
+                }
+            )
+        }
+
+        item {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -801,14 +1051,28 @@ fun CounterScreen(viewModel: CounterViewModel) {
                         exportBackupLauncher.launch("day-surp-backup.json")
                     }
                 ) {
-                    Text("Export Backup")
+                    Text(stringResource(R.string.export_backup))
                 }
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
                 Button(
                     onClick = {
                         importBackupLauncher.launch(arrayOf("application/json"))
                     }
                 ) {
-                    Text("Import Backup")
+                    Text(stringResource(R.string.import_backup))
+                }
+                Button(
+                    onClick = {
+                        exportCsvLauncher.launch("day-surp-transactions.csv")
+                    }
+                ) {
+                    Text(stringResource(R.string.export_csv))
                 }
             }
         }
@@ -816,7 +1080,7 @@ fun CounterScreen(viewModel: CounterViewModel) {
         if (groupedFilteredTransactions.incomeGroups.isNotEmpty()) {
             item {
                 Text(
-                    text = "Income By Category",
+                    text = stringResource(R.string.income_by_category),
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -828,7 +1092,11 @@ fun CounterScreen(viewModel: CounterViewModel) {
             val isExpanded = expandedCategories[groupKey] ?: true
             CategoryGroupCard(
                 group = group,
-                entryLabel = "income entries",
+                entryText = stringResource(
+                    R.string.income_entries_count,
+                    group.transactions.size,
+                    stringResource(R.string.amount_euro, group.total)
+                ),
                 isExpanded = isExpanded,
                 onToggle = {
                     expandedCategories[groupKey] = !isExpanded
@@ -849,7 +1117,7 @@ fun CounterScreen(viewModel: CounterViewModel) {
         if (groupedFilteredTransactions.expenseGroups.isNotEmpty()) {
             item {
                 Text(
-                    text = "Expenses By Category",
+                    text = stringResource(R.string.expenses_by_category),
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -861,7 +1129,11 @@ fun CounterScreen(viewModel: CounterViewModel) {
             val isExpanded = expandedCategories[groupKey] ?: true
             CategoryGroupCard(
                 group = group,
-                entryLabel = "expenses",
+                entryText = stringResource(
+                    R.string.expenses_count,
+                    group.transactions.size,
+                    stringResource(R.string.amount_euro, group.total)
+                ),
                 isExpanded = isExpanded,
                 onToggle = {
                     expandedCategories[groupKey] = !isExpanded
@@ -882,7 +1154,7 @@ fun CounterScreen(viewModel: CounterViewModel) {
         if (periodTransactions.isEmpty()) {
             item {
                 Text(
-                    text = "No transactions in the selected period.",
+                    text = stringResource(R.string.no_transactions_period),
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -890,7 +1162,7 @@ fun CounterScreen(viewModel: CounterViewModel) {
         } else if (filteredTransactions.isEmpty()) {
             item {
                 Text(
-                    text = "No transactions match the current filters.",
+                    text = stringResource(R.string.no_transactions_filters),
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -903,10 +1175,104 @@ fun CounterScreen(viewModel: CounterViewModel) {
                 onClick = { showResetDialog = true },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Reset All Data")
+                Text(stringResource(R.string.reset_all_data))
             }
             Spacer(modifier = Modifier.height(16.dp))
             LegalNotice()
+        }
+    }
+}
+
+@Composable
+private fun scopeDisplayLabel(scope: String): String = when (scope) {
+    "Income" -> stringResource(R.string.scope_income)
+    "Expense" -> stringResource(R.string.scope_expense)
+    else -> stringResource(R.string.scope_all)
+}
+
+@Composable
+private fun CustomCategoriesCard(
+    expenseCustomCategories: List<String>,
+    incomeCustomCategories: List<String>,
+    onRename: (CategoryType, String) -> Unit,
+    onDelete: (CategoryType, String) -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(
+                text = stringResource(R.string.custom_categories),
+                style = MaterialTheme.typography.titleMedium
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            if (expenseCustomCategories.isEmpty() && incomeCustomCategories.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.no_custom_categories),
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+
+            if (expenseCustomCategories.isNotEmpty()) {
+                Text(
+                    text = stringResource(R.string.custom_categories_expense),
+                    style = MaterialTheme.typography.titleSmall
+                )
+                expenseCustomCategories.forEach { name ->
+                    CustomCategoryRow(
+                        name = name,
+                        onRename = { onRename(CategoryType.EXPENSE, name) },
+                        onDelete = { onDelete(CategoryType.EXPENSE, name) }
+                    )
+                }
+            }
+
+            if (incomeCustomCategories.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = stringResource(R.string.custom_categories_income),
+                    style = MaterialTheme.typography.titleSmall
+                )
+                incomeCustomCategories.forEach { name ->
+                    CustomCategoryRow(
+                        name = name,
+                        onRename = { onRename(CategoryType.INCOME, name) },
+                        onDelete = { onDelete(CategoryType.INCOME, name) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CustomCategoryRow(
+    name: String,
+    onRename: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = name,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.weight(1f)
+        )
+        IconButton(onClick = onRename) {
+            Icon(
+                imageVector = Icons.Default.Edit,
+                contentDescription = stringResource(R.string.rename_category)
+            )
+        }
+        IconButton(onClick = onDelete) {
+            Icon(
+                imageVector = Icons.Default.Delete,
+                contentDescription = stringResource(R.string.delete_category)
+            )
         }
     }
 }
@@ -940,7 +1306,7 @@ private fun showDatePicker(
 @Composable
 private fun CategoryGroupCard(
     group: TransactionGroup,
-    entryLabel: String,
+    entryText: String,
     isExpanded: Boolean,
     onToggle: () -> Unit,
     dateFormat: SimpleDateFormat,
@@ -967,12 +1333,12 @@ private fun CategoryGroupCard(
                         style = MaterialTheme.typography.titleSmall
                     )
                     Text(
-                        text = "${group.transactions.size} $entryLabel - ${String.format("%.2f €", group.total)}",
+                        text = entryText,
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
                 Text(
-                    text = if (isExpanded) "[-] Collapse" else "[+] Expand",
+                    text = if (isExpanded) stringResource(R.string.collapse) else stringResource(R.string.expand),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.primary
                 )
@@ -1025,7 +1391,7 @@ private fun TransactionRow(
                         style = MaterialTheme.typography.bodySmall
                     )
                     Text(
-                        text = String.format("%.2f €", transaction.amount),
+                        text = stringResource(R.string.amount_euro, transaction.amount),
                         style = MaterialTheme.typography.bodyMedium,
                         color = if (transaction.amount >= 0) {
                             MaterialTheme.colorScheme.primary
@@ -1054,13 +1420,13 @@ private fun TransactionRow(
                 IconButton(onClick = { onEdit(transaction) }) {
                     Icon(
                         imageVector = Icons.Default.Edit,
-                        contentDescription = "Edit transaction"
+                        contentDescription = stringResource(R.string.edit_transaction_cd)
                     )
                 }
                 IconButton(onClick = { onDelete(transaction) }) {
                     Icon(
                         imageVector = Icons.Default.Delete,
-                        contentDescription = "Delete transaction"
+                        contentDescription = stringResource(R.string.delete_transaction_cd)
                     )
                 }
             }
@@ -1078,12 +1444,12 @@ fun LegalNotice() {
         verticalArrangement = Arrangement.Center
     ) {
         Text(
-            text = "Copyright © 2025 Giovanni Mauceri. All Rights Reserved.",
+            text = stringResource(R.string.legal_notice_1),
             style = MaterialTheme.typography.bodySmall,
             textAlign = TextAlign.Center
         )
         Text(
-            text = "Unauthorized copying, modification, distribution, or public performance of this software is strictly prohibited.",
+            text = stringResource(R.string.legal_notice_2),
             style = MaterialTheme.typography.bodySmall,
             textAlign = TextAlign.Center
         )

@@ -9,19 +9,29 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
-import com.example.startapp.data.model.DailySnapshot
-import com.example.startapp.data.model.Transaction
+import com.example.startapp.data.backup.ImportMode
+import com.example.startapp.data.model.AppBackup
+import com.example.startapp.domain.calendarDayKey
 import com.example.startapp.domain.createNormalizedDateRange
 import com.example.startapp.domain.defaultDateRange
 import com.example.startapp.domain.model.CategoryCatalog
-import com.example.startapp.domain.model.DateRangeFilter
 import com.example.startapp.domain.model.CategoryType
+import com.example.startapp.domain.model.DateRangeFilter
+import com.example.startapp.domain.model.DailySnapshot
 import com.example.startapp.domain.model.ExpenseCategory
+import com.example.startapp.domain.model.Transaction
+import com.example.startapp.utils.AppLog
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+
+private const val DEFAULT_DAYS_TO_DISPLAY = 30
+private const val DEFAULT_MAX_HISTORY_DAYS = 900
+private const val MILLIS_PER_DAY = 24L * 60L * 60L * 1000L
 
 // Extension property to delegate DataStore creation to the context
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
@@ -64,16 +74,23 @@ private fun List<Transaction>.normalizedTransactions(): List<Transaction> {
     }
 }
 
-private fun Gson.fromJsonStringList(json: String?): List<String> {
-    val type = object : TypeToken<List<String>>() {}.type
-    return fromJson<List<String>>(json ?: "[]", type) ?: emptyList()
+private inline fun <reified T> Gson.safeParseList(json: String?, logLabel: String): List<T> {
+    return try {
+        fromJson<List<T>>(json ?: "[]", object : TypeToken<List<T>>() {}.type) ?: emptyList()
+    } catch (t: Throwable) {
+        AppLog.w("CounterDataRepository", "Corrupted $logLabel JSON, falling back to empty list", t)
+        emptyList()
+    }
 }
+
+private fun Gson.fromJsonStringList(json: String?): List<String> = safeParseList(json, "string-list")
 
 class CounterDataRepository(private val dataStore: DataStore<Preferences>) {
 
     constructor(context: Context) : this(context.dataStore)
 
-    // Define keys for each piece of data we want to store
+    internal val dataStoreForTest: DataStore<Preferences> get() = dataStore
+
     private val totalAmountKey = doublePreferencesKey("total_amount")
     private val dailyIncreaseKey = doublePreferencesKey("daily_increase")
     private val transactionsKey = stringPreferencesKey("transactions")
@@ -87,39 +104,32 @@ class CounterDataRepository(private val dataStore: DataStore<Preferences>) {
 
     private val gson = Gson()
 
-    // Flow to emit the total amount whenever it changes
     val totalAmount: Flow<Double> = dataStore.data
         .map { preferences ->
             preferences[totalAmountKey] ?: 0.0
         }
 
-    // Flow to emit the daily increase amount whenever it changes
     val dailyIncrease: Flow<Double> = dataStore.data
         .map { preferences ->
             preferences[dailyIncreaseKey] ?: 0.0
         }
 
-    // Flow to emit the list of transactions
     val transactions: Flow<List<Transaction>> = dataStore.data
         .map { preferences ->
-            val json = preferences[transactionsKey] ?: "[]"
-            val type = object : TypeToken<List<Transaction>>() {}.type
-            val current: List<Transaction> = gson.fromJson(json, type) ?: emptyList()
-            current.normalizedTransactions()
+            gson.safeParseList<Transaction>(preferences[transactionsKey], "transactions")
+                .normalizedTransactions()
         }
+        .flowOn(Dispatchers.Default)
 
-    // Flow to emit the list of daily snapshots
     val dailySnapshots: Flow<List<DailySnapshot>> = dataStore.data
         .map { preferences ->
-            val json = preferences[dailySnapshotsKey] ?: "[]"
-            val type = object : TypeToken<List<DailySnapshot>>() {}.type
-            gson.fromJson(json, type)
+            gson.safeParseList<DailySnapshot>(preferences[dailySnapshotsKey], "daily_snapshots")
         }
+        .flowOn(Dispatchers.Default)
 
-    // Flow to emit the number of days to display (for the chart view)
     val daysToDisplay: Flow<Int> = dataStore.data
         .map { preferences ->
-            preferences[daysToDisplayKey] ?: 30 // Default to 30 days
+            preferences[daysToDisplayKey] ?: DEFAULT_DAYS_TO_DISPLAY
         }
 
     val dateRangeFilter: Flow<DateRangeFilter> = dataStore.data
@@ -129,31 +139,30 @@ class CounterDataRepository(private val dataStore: DataStore<Preferences>) {
             val end = preferences[filterEndDateKey] ?: default.endEpochMs
             createNormalizedDateRange(start, end)
         }
-    
-    // Flow to emit the max history days to keep
+
     val maxHistoryDays: Flow<Int> = dataStore.data
         .map { preferences ->
-            preferences[maxHistoryDaysKey] ?: 900 // Default to 900 days
+            preferences[maxHistoryDaysKey] ?: DEFAULT_MAX_HISTORY_DAYS
         }
 
     val expenseCustomCategories: Flow<List<String>> = dataStore.data
         .map { preferences ->
             gson.fromJsonStringList(preferences[expenseCustomCategoriesKey])
         }
+        .flowOn(Dispatchers.Default)
 
     val incomeCustomCategories: Flow<List<String>> = dataStore.data
         .map { preferences ->
             gson.fromJsonStringList(preferences[incomeCustomCategoriesKey])
         }
+        .flowOn(Dispatchers.Default)
 
-    // Suspended function to update the total amount
     suspend fun updateTotalAmount(newAmount: Double) {
         dataStore.edit {
             it[totalAmountKey] = newAmount
         }
     }
 
-    // Suspended function to update the daily increase amount
     suspend fun updateDailyIncrease(newAmount: Double) {
         dataStore.edit {
             it[dailyIncreaseKey] = newAmount
@@ -161,51 +170,52 @@ class CounterDataRepository(private val dataStore: DataStore<Preferences>) {
     }
 
     suspend fun addTransaction(transaction: Transaction) {
+        recordTransaction(transaction, totalDelta = 0.0)
+    }
+
+    /**
+     * Atomically appends a transaction (with retention policy) and applies
+     * [totalDelta] to the running total inside a single DataStore edit.
+     */
+    suspend fun recordTransaction(transaction: Transaction, totalDelta: Double) {
         dataStore.edit { preferences ->
-            val json = preferences[transactionsKey] ?: "[]"
-            val type = object : TypeToken<MutableList<Transaction>>() {}.type
-            val currentList: MutableList<Transaction> = gson.fromJson(json, type) ?: mutableListOf()
-            val maxDays = preferences[maxHistoryDaysKey] ?: 900
+            val currentTotal = preferences[totalAmountKey] ?: 0.0
+            preferences[totalAmountKey] = currentTotal + totalDelta
 
-            currentList.add(transaction)
+            val current = gson.safeParseList<Transaction>(preferences[transactionsKey], "transactions")
+                .toMutableList()
+            val maxDays = preferences[maxHistoryDaysKey] ?: DEFAULT_MAX_HISTORY_DAYS
 
-            // Retention policy: Keep data up to maxDays
-            val retentionLimit = System.currentTimeMillis() - (maxDays.toLong() * 24 * 60 * 60 * 1000)
-            val filteredList = currentList.filter { it.date >= retentionLimit }
+            current.add(transaction)
 
-            preferences[transactionsKey] = gson.toJson(filteredList)
+            val retentionLimit = System.currentTimeMillis() - (maxDays.toLong() * MILLIS_PER_DAY)
+            preferences[transactionsKey] = gson.toJson(current.filter { it.date >= retentionLimit })
         }
     }
 
     suspend fun addDailySnapshot(snapshot: DailySnapshot) {
         dataStore.edit { preferences ->
-            val json = preferences[dailySnapshotsKey] ?: "[]"
-            val type = object : TypeToken<MutableList<DailySnapshot>>() {}.type
-            val currentList: MutableList<DailySnapshot> = gson.fromJson(json, type) ?: mutableListOf()
-            val maxDays = preferences[maxHistoryDaysKey] ?: 900
+            val current = gson.safeParseList<DailySnapshot>(preferences[dailySnapshotsKey], "daily_snapshots")
+                .toMutableList()
+            val maxDays = preferences[maxHistoryDaysKey] ?: DEFAULT_MAX_HISTORY_DAYS
 
-            currentList.add(snapshot)
-            
-            // Retention policy for snapshots
-            val retentionLimit = System.currentTimeMillis() - (maxDays.toLong() * 24 * 60 * 60 * 1000)
-            val filteredList = currentList.filter { it.date >= retentionLimit }
-            
-            preferences[dailySnapshotsKey] = gson.toJson(filteredList)
+            current.add(snapshot)
+
+            val retentionLimit = System.currentTimeMillis() - (maxDays.toLong() * MILLIS_PER_DAY)
+            preferences[dailySnapshotsKey] = gson.toJson(current.filter { it.date >= retentionLimit })
         }
     }
 
     suspend fun deleteTransaction(transactionId: String) {
         dataStore.edit { preferences ->
-            val json = preferences[transactionsKey] ?: "[]"
-            val type = object : TypeToken<MutableList<Transaction>>() {}.type
-            val currentList: MutableList<Transaction> = gson.fromJson(json, type) ?: mutableListOf()
+            val current = gson.safeParseList<Transaction>(preferences[transactionsKey], "transactions")
+                .toMutableList()
 
-            val transactionToRemove = currentList.find { it.id == transactionId }
+            val transactionToRemove = current.find { it.id == transactionId }
             if (transactionToRemove != null) {
-                currentList.remove(transactionToRemove)
-                preferences[transactionsKey] = gson.toJson(currentList)
+                current.remove(transactionToRemove)
+                preferences[transactionsKey] = gson.toJson(current)
 
-                // Re-update total amount by reversing the transaction
                 val currentTotal = preferences[totalAmountKey] ?: 0.0
                 preferences[totalAmountKey] = currentTotal - transactionToRemove.amount
             }
@@ -219,23 +229,22 @@ class CounterDataRepository(private val dataStore: DataStore<Preferences>) {
         newCategory: String
     ) {
         dataStore.edit { preferences ->
-            val json = preferences[transactionsKey] ?: "[]"
-            val type = object : TypeToken<MutableList<Transaction>>() {}.type
-            val currentList: MutableList<Transaction> = gson.fromJson(json, type) ?: mutableListOf()
+            val current = gson.safeParseList<Transaction>(preferences[transactionsKey], "transactions")
+                .toMutableList()
 
-            val index = currentList.indexOfFirst { it.id == id }
+            val index = current.indexOfFirst { it.id == id }
             if (index < 0) {
                 return@edit
             }
 
-            val old = currentList[index]
+            val old = current[index]
             val updated = old.copy(
                 amount = newAmount,
                 description = newDescription,
                 category = newCategory
             )
-            currentList[index] = updated
-            preferences[transactionsKey] = gson.toJson(currentList)
+            current[index] = updated
+            preferences[transactionsKey] = gson.toJson(current)
 
             val currentTotal = preferences[totalAmountKey] ?: 0.0
             val delta = newAmount - old.amount
@@ -252,9 +261,7 @@ class CounterDataRepository(private val dataStore: DataStore<Preferences>) {
 
     suspend fun normalizeStoredTransactions() {
         dataStore.edit { preferences ->
-            val json = preferences[transactionsKey] ?: "[]"
-            val type = object : TypeToken<List<Transaction>>() {}.type
-            val current: List<Transaction> = gson.fromJson(json, type) ?: emptyList()
+            val current = gson.safeParseList<Transaction>(preferences[transactionsKey], "transactions")
             val normalized = current.normalizedTransactions()
             if (normalized != current) {
                 preferences[transactionsKey] = gson.toJson(normalized)
@@ -292,15 +299,12 @@ class CounterDataRepository(private val dataStore: DataStore<Preferences>) {
 
     suspend fun resetDaysToDisplay() {
         dataStore.edit {
-            it[daysToDisplayKey] = 30 // Reset to default
+            it[daysToDisplayKey] = DEFAULT_DAYS_TO_DISPLAY
         }
     }
 
     suspend fun addCustomCategory(type: CategoryType, rawName: String): String? {
-        val key = when (type) {
-            CategoryType.EXPENSE -> expenseCustomCategoriesKey
-            CategoryType.INCOME -> incomeCustomCategoriesKey
-        }
+        val key = customCategoriesKey(type)
 
         var created: String? = null
         dataStore.edit { preferences ->
@@ -315,27 +319,61 @@ class CounterDataRepository(private val dataStore: DataStore<Preferences>) {
         return created
     }
 
-    suspend fun exportBackup(): com.example.startapp.data.model.AppBackup {
+    suspend fun renameCustomCategory(type: CategoryType, oldName: String, newName: String): String? {
+        val key = customCategoriesKey(type)
+        val normalizedNew = CategoryCatalog.normalizeCustomCategoryName(newName)
+
+        var renamed: String? = null
+        dataStore.edit { preferences ->
+            val current = gson.fromJsonStringList(preferences[key])
+            val oldNormalized = CategoryCatalog.normalizeCustomCategoryName(oldName)
+            val withoutOld = current.filter { CategoryCatalog.normalizeCustomCategoryName(it) != oldNormalized }
+            if (withoutOld.size == current.size) {
+                return@edit
+            }
+            if (!CategoryCatalog.canAddCustomCategory(type, normalizedNew, withoutOld)) {
+                return@edit
+            }
+
+            renamed = normalizedNew
+            preferences[key] = gson.toJson((withoutOld + normalizedNew).distinct().sorted())
+        }
+        return renamed
+    }
+
+    suspend fun deleteCustomCategory(type: CategoryType, name: String) {
+        val key = customCategoriesKey(type)
+        val target = CategoryCatalog.normalizeCustomCategoryName(name)
+
+        dataStore.edit { preferences ->
+            val current = gson.fromJsonStringList(preferences[key])
+            val updated = current.filter { CategoryCatalog.normalizeCustomCategoryName(it) != target }
+            if (updated.size != current.size) {
+                preferences[key] = gson.toJson(updated)
+            }
+        }
+    }
+
+    private fun customCategoriesKey(type: CategoryType) = when (type) {
+        CategoryType.EXPENSE -> expenseCustomCategoriesKey
+        CategoryType.INCOME -> incomeCustomCategoriesKey
+    }
+
+    suspend fun exportBackup(): AppBackup {
         val preferences = dataStore.data.first()
 
-        val transactionsJson = preferences[transactionsKey] ?: "[]"
-        val transactionsType = object : TypeToken<List<Transaction>>() {}.type
-        val transactions: List<Transaction> = gson.fromJson(transactionsJson, transactionsType) ?: emptyList()
-
-        val snapshotsJson = preferences[dailySnapshotsKey] ?: "[]"
-        val snapshotsType = object : TypeToken<List<DailySnapshot>>() {}.type
-        val dailySnapshots: List<DailySnapshot> = gson.fromJson(snapshotsJson, snapshotsType) ?: emptyList()
-
+        val transactions = gson.safeParseList<Transaction>(preferences[transactionsKey], "transactions")
+        val dailySnapshots = gson.safeParseList<DailySnapshot>(preferences[dailySnapshotsKey], "daily_snapshots")
         val expenseCustom = gson.fromJsonStringList(preferences[expenseCustomCategoriesKey])
         val incomeCustom = gson.fromJsonStringList(preferences[incomeCustomCategoriesKey])
 
-        return com.example.startapp.data.model.AppBackup(
+        return AppBackup(
             schemaVersion = com.example.startapp.data.backup.BackupValidator.SUPPORTED_SCHEMA_VERSION,
             createdAtEpochMs = System.currentTimeMillis(),
             totalAmount = preferences[totalAmountKey] ?: 0.0,
             dailyIncrease = preferences[dailyIncreaseKey] ?: 0.0,
-            daysToDisplay = preferences[daysToDisplayKey] ?: 30,
-            maxHistoryDays = preferences[maxHistoryDaysKey] ?: 900,
+            daysToDisplay = preferences[daysToDisplayKey] ?: DEFAULT_DAYS_TO_DISPLAY,
+            maxHistoryDays = preferences[maxHistoryDaysKey] ?: DEFAULT_MAX_HISTORY_DAYS,
             transactions = transactions,
             dailySnapshots = dailySnapshots,
             expenseCustomCategories = expenseCustom,
@@ -343,9 +381,17 @@ class CounterDataRepository(private val dataStore: DataStore<Preferences>) {
         )
     }
 
-    suspend fun importBackup(backup: com.example.startapp.data.model.AppBackup) {
+    suspend fun importBackup(backup: AppBackup, mode: ImportMode = ImportMode.REPLACE) {
+        when (mode) {
+            ImportMode.REPLACE -> importBackupReplace(backup)
+            ImportMode.MERGE -> importBackupMerge(backup)
+        }
+        normalizeStoredTransactions()
+    }
+
+    private suspend fun importBackupReplace(backup: AppBackup) {
         val now = System.currentTimeMillis()
-        val retentionLimit = now - (backup.maxHistoryDays.toLong() * 24 * 60 * 60 * 1000)
+        val retentionLimit = now - (backup.maxHistoryDays.toLong() * MILLIS_PER_DAY)
         val filteredTransactions = backup.transactions.filter { it.date >= retentionLimit }
         val filteredSnapshots = backup.dailySnapshots.filter { it.date >= retentionLimit }
 
@@ -359,7 +405,47 @@ class CounterDataRepository(private val dataStore: DataStore<Preferences>) {
             preferences[expenseCustomCategoriesKey] = gson.toJson(backup.expenseCustomCategories.distinct().sorted())
             preferences[incomeCustomCategoriesKey] = gson.toJson(backup.incomeCustomCategories.distinct().sorted())
         }
+    }
 
-        normalizeStoredTransactions()
+    private suspend fun importBackupMerge(backup: AppBackup) {
+        dataStore.edit { preferences ->
+            val currentTransactions = gson.safeParseList<Transaction>(preferences[transactionsKey], "transactions")
+            val currentSnapshots = gson.safeParseList<DailySnapshot>(preferences[dailySnapshotsKey], "daily_snapshots")
+            val currentExpenseCustom = gson.fromJsonStringList(preferences[expenseCustomCategoriesKey])
+            val currentIncomeCustom = gson.fromJsonStringList(preferences[incomeCustomCategoriesKey])
+            val maxDays = preferences[maxHistoryDaysKey] ?: DEFAULT_MAX_HISTORY_DAYS
+
+            // Union of transactions by id: current entries win on conflicts.
+            val transactionsById = currentTransactions.associateBy { it.id }.toMutableMap()
+            backup.transactions.forEach { transaction ->
+                transactionsById.putIfAbsent(transaction.id, transaction)
+            }
+
+            // Union of snapshots by calendar day: the most recent entry wins.
+            val snapshotsByDay = currentSnapshots
+                .groupBy { calendarDayKey(it.date) }
+                .mapValues { (_, daySnapshots) -> daySnapshots.maxByOrNull(DailySnapshot::date)!! }
+                .toMutableMap()
+            backup.dailySnapshots.forEach { snapshot ->
+                val day = calendarDayKey(snapshot.date)
+                val existing = snapshotsByDay[day]
+                if (existing == null || snapshot.date >= existing.date) {
+                    snapshotsByDay[day] = snapshot
+                }
+            }
+
+            val mergedTransactions = transactionsById.values.toList()
+            val mergedSnapshots = snapshotsByDay.values.sortedBy(DailySnapshot::date)
+
+            // Settings (total, daily increase, retention) stay on current values.
+            val retentionLimit = System.currentTimeMillis() - (maxDays.toLong() * MILLIS_PER_DAY)
+
+            preferences[transactionsKey] = gson.toJson(mergedTransactions.filter { it.date >= retentionLimit })
+            preferences[dailySnapshotsKey] = gson.toJson(mergedSnapshots.filter { it.date >= retentionLimit })
+            preferences[expenseCustomCategoriesKey] =
+                gson.toJson((currentExpenseCustom + backup.expenseCustomCategories).distinct().sorted())
+            preferences[incomeCustomCategoriesKey] =
+                gson.toJson((currentIncomeCustom + backup.incomeCustomCategories).distinct().sorted())
+        }
     }
 }

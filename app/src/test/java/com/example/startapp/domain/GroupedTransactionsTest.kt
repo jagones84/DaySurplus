@@ -1,6 +1,6 @@
 package com.example.startapp.domain
 
-import com.example.startapp.data.model.Transaction
+import com.example.startapp.domain.model.Transaction
 import com.example.startapp.domain.model.buildGroupedTransactionState
 import org.junit.Assert.assertEquals
 import org.junit.Test

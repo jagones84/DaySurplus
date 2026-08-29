@@ -3,7 +3,7 @@ package com.example.startapp.data
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
-import com.example.startapp.data.model.Transaction
+import com.example.startapp.domain.model.Transaction
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import java.io.File

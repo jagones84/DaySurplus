@@ -1,4 +1,4 @@
-package com.example.startapp.data.model
+package com.example.startapp.domain.model
 
 import java.util.UUID
 

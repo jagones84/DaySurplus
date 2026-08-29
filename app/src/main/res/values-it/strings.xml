@@ -1,0 +1,118 @@
+<resources>
+    <string name="app_name">DaySurplus</string>
+
+    <!-- Navigation -->
+    <string name="nav_counter">Conto</string>
+    <string name="nav_chart">Grafici</string>
+    <string name="nav_settings">Impostazioni</string>
+
+    <!-- Counter screen -->
+    <string name="total_surplus">Surplus Totale</string>
+    <string name="amount_euro">%1$.2f €</string>
+    <string name="add_or_subtract_amount">Aggiungi o Sottrai Importo</string>
+    <string name="description_label">Descrizione</string>
+    <string name="income_category">Categoria Entrata</string>
+    <string name="expense_category">Categoria Uscita</string>
+    <string name="add">Aggiungi</string>
+    <string name="subtract">Sottrai</string>
+    <string name="day_surplus">Surplus Giornaliero</string>
+    <string name="day_surplus_hint">(Entrate Mensili - Uscite Mensili) * 12 / 365</string>
+    <string name="history">Storico</string>
+    <string name="analysis_range">Intervallo di Analisi</string>
+    <string name="timeframe_window">Finestra Temporale</string>
+    <string name="from_date">Dal: %1$s</string>
+    <string name="to_date">Al: %1$s</string>
+    <string name="reset_filter">Reset filtro</string>
+    <string name="search">Cerca</string>
+    <string name="scope">Ambito</string>
+    <string name="scope_all">Tutto</string>
+    <string name="scope_income">Entrate</string>
+    <string name="scope_expense">Uscite</string>
+    <string name="category">Categoria</string>
+    <string name="export_backup">Esporta Backup</string>
+    <string name="import_backup">Importa Backup</string>
+    <string name="export_csv">Esporta CSV</string>
+    <string name="reset_all_data">Resetta Tutti i Dati</string>
+    <string name="reset_data_title">Reset Dati</string>
+    <string name="reset_data_message">Sicuro di voler resettare tutti i dati? Questa azione non può essere annullata.</string>
+    <string name="reset">Reset</string>
+    <string name="cancel">Annulla</string>
+    <string name="new_category">Nuova Categoria</string>
+    <string name="category_name">Nome Categoria</string>
+    <string name="save">Salva</string>
+    <string name="edit_transaction">Modifica Transazione</string>
+    <string name="amount">Importo</string>
+    <string name="backup_title">Backup</string>
+    <string name="backup_exported">Backup esportato.</string>
+    <string name="backup_export_failed">Esportazione backup fallita: %1$s</string>
+    <string name="backup_imported">Backup importato.</string>
+    <string name="backup_import_failed">Importazione backup fallita: %1$s</string>
+    <string name="import_choose_mode_title">Importa backup</string>
+    <string name="import_choose_mode_message">Sostituire tutti i dati attuali con il backup, oppure unire il backup ai dati esistenti?</string>
+    <string name="import_replace_all">Sostituisci tutto</string>
+    <string name="import_merge">Unisci</string>
+    <string name="invalid_amount">Inserisci un importo maggiore di zero</string>
+    <string name="no_transactions_period">Nessuna transazione nel periodo selezionato.</string>
+    <string name="no_transactions_filters">Nessuna transazione corrisponde ai filtri attuali.</string>
+    <string name="income_by_category">Entrate Per Categoria</string>
+    <string name="expenses_by_category">Uscite Per Categoria</string>
+    <string name="income_entries_count">%1$d voci di entrata - %2$s</string>
+    <string name="expenses_count">%1$d uscite - %2$s</string>
+    <string name="collapse">[-] Comprimi</string>
+    <string name="expand">[+] Espandi</string>
+    <string name="edit_transaction_cd">Modifica transazione</string>
+    <string name="delete_transaction_cd">Elimina transazione</string>
+    <string name="legal_notice_1">Copyright © 2025 Giovanni Mauceri. Tutti i diritti riservati.</string>
+    <string name="legal_notice_2">La copia, modifica, distribuzione o esecuzione pubblica non autorizzate di questo software sono severamente vietate.</string>
+
+    <!-- Custom categories management -->
+    <string name="custom_categories">Categorie Personalizzate</string>
+    <string name="custom_categories_expense">Uscite</string>
+    <string name="custom_categories_income">Entrate</string>
+    <string name="no_custom_categories">Nessuna categoria personalizzata.</string>
+    <string name="rename_category">Rinomina categoria</string>
+    <string name="delete_category">Elimina categoria</string>
+    <string name="rename_category_title">Rinomina categoria</string>
+    <string name="category_in_use_note">Le voci dello storico mantengono la vecchia etichetta.</string>
+
+    <!-- Chart screen -->
+    <string name="performance_chart">Grafico Prestazioni</string>
+    <string name="chart_aggregation">Aggregazione Grafico</string>
+    <string name="tf_daily">Giornaliero</string>
+    <string name="tf_weekly">Settimanale</string>
+    <string name="tf_monthly">Mensile</string>
+    <string name="tf_yearly">Annuale</string>
+    <string name="saving_ratio">Rapporto Risparmio (Periodo Selezionato): %1$.2f%%</string>
+    <string name="total_expenses">Uscite Totali: %1$.2f €</string>
+    <string name="total_income">Entrate Totali: %1$.2f €</string>
+    <string name="average_surplus">Surplus Medio: %1$.2f €</string>
+    <string name="surplus_std_dev">Dev. Std Surplus: %1$.2f</string>
+    <string name="top_expense_category">Categoria Uscite Top: %1$s (%2$.2f%%)</string>
+    <string name="active_expense_categories">Categorie Uscite Attive: %1$d</string>
+    <string name="expense_categories">Categorie Uscite</string>
+    <string name="income_categories">Categorie Entrate</string>
+    <string name="category_slice_line">%1$s: %2$.2f € | %3$.2f%% | %4$.2f €/mese</string>
+    <string name="no_expense_data">Nessun dato uscite disponibile per il periodo selezionato.</string>
+    <string name="no_income_data">Nessun dato entrate disponibile per il periodo selezionato.</string>
+    <string name="analytics_period">Analisi (Periodo Selezionato)</string>
+    <string name="top_expense_descriptions">Descrizioni Uscite Top</string>
+    <string name="top_expense_days">Giorni Uscite Top</string>
+    <string name="metric_line">%1$s: %2$.2f €</string>
+    <string name="no_expense_description_data">Nessun dato descrizioni uscite disponibile.</string>
+    <string name="no_expense_day_data">Nessun dato giorni uscite disponibile.</string>
+    <string name="chart_no_data">Nessun dato disponibile</string>
+    <string name="pie_expenses">Uscite</string>
+    <string name="pie_income">Entrate</string>
+    <string name="pie_no_expense_categories">Nessuna categoria uscite disponibile</string>
+    <string name="pie_no_income_categories">Nessuna categoria entrate disponibile</string>
+
+    <!-- Settings screen -->
+    <string name="settings_title">Impostazioni</string>
+    <string name="settings_section_retention">Conservazione storico</string>
+    <string name="max_history_days">Giorni massimi di storico</string>
+    <string name="max_history_days_hint">Transazioni e snapshot più vecchi vengono rimossi quando si aggiungono nuovi dati.</string>
+    <string name="max_history_days_invalid">Inserisci un numero intero positivo</string>
+    <string name="retention_saved">Conservazione salvata</string>
+    <string name="settings_section_data">Dati</string>
+    <string name="settings_data_note">Usa la scheda Conto per esportare/importare backup (JSON) o esportare CSV.</string>
+</resources>
