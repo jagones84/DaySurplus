@@ -1,6 +1,6 @@
-# DaySurp
+# DaySurplus
 
-DaySurp is an Android app for tracking surplus, expenses, incomes, grouped category history, and financial charts.
+DaySurplus is an Android app for tracking surplus, expenses, incomes, grouped category history, and financial charts.
 
 ## Requirements
 
